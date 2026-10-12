@@ -1,0 +1,31 @@
+license = "${license}"
+<% if (mod_issues) { %>issueTrackerURL = "${mod_issues}"
+issuesUrl = "${mod_issues}"
+<% } %>
+[[mods]]
+modId = "${mod_id}"
+version = "${version}"
+displayName = "${mod_name}"
+# Square icon in the mod list (24x24 on screen), banner in the info panel (height capped at 50).
+iconFile = "assets/${mod_id}/icon.png"
+iconBlur = false
+bannerFile = "assets/${mod_id}/banner.png"
+<% if (mod_homepage) { %>displayURL = "${mod_homepage}"
+displayUrl = "${mod_homepage}"
+<% } %>authors = "${mod_author}"
+description = '''${description}
+Client-side only. Bundles dev.xpple:cubiomes (LGPL-3.0).'''
+
+[[dependencies.${mod_id}]]
+modId = "neoforge"
+type = "required"
+versionRange = "[${neoforge_version},)"
+ordering = "NONE"
+side = "CLIENT"
+
+[[dependencies.${mod_id}]]
+modId = "minecraft"
+type = "required"
+versionRange = "${minecraft_version_range}"
+ordering = "NONE"
+side = "CLIENT"

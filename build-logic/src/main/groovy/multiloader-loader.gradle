@@ -1,0 +1,15 @@
+plugins {
+    id 'multiloader-common'
+}
+
+// The loader modules compile the shared code from ':common' as part of their own 'main' source set,
+// so every loader jar is self-contained. Declaring the folders as plain source directories (instead
+// of wiring them in through a custom configuration) is understood by Gradle, IntelliJ and Eclipse.
+def commonProject = project(':common')
+
+sourceSets {
+    main {
+        java.srcDir(commonProject.file('src/main/java'))
+        resources.srcDir(commonProject.file('src/main/resources'))
+    }
+}
