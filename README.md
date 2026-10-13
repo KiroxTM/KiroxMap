@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/license-CC0--1.0-lightgrey?style=flat-square" alt="CC0-1.0">
 </p>
 
-**KiroxMap 1.0.0-Beta** is a full-screen world map for Minecraft that works **only from the world seed.** **Press M** and see the biomes and structures of the whole world, including places you have never visited. It never loads chunks and never reads the blocks around you.
+**KiroxMap 1.0.1-Beta** is a full-screen world map for Minecraft that works **only from the world seed.** **Press M** and see the biomes and structures of the whole world, including places you have never visited. It never loads chunks and never reads the blocks around you.
 
 > **Client-side only.** Fabric and NeoForge, Minecraft 26.3.
 

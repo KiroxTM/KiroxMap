@@ -40,7 +40,6 @@ public final class AtlasScreen extends Screen {
 	private static final int PAD = 6;
 	private static final int GAP = 2;
 	private static final int PLATE_PAD = 3;
-	private static final int PLATE_H = IconButton.SIZE + PLATE_PAD * 2;
 	private static final int PLATE_GAP = 6;
 	private static final int FRAMES_BEFORE_LOAD = 2;
 	private static final long SEED_DEBOUNCE_MS = 350;
@@ -60,7 +59,6 @@ public final class AtlasScreen extends Screen {
 	private int framesDrawn;
 	/** Widgets must not be rebuilt while a click is dispatched, so rebuilds wait for the next tick. */
 	private boolean rebuildPending;
-	private int helpTop;
 
 	public AtlasScreen() {
 		super(Component.translatable("kiroxmap.title"));
@@ -73,50 +71,54 @@ public final class AtlasScreen extends Screen {
 			openWorld(); // cheap: no native code involved
 		}
 
+		final int S = IconButton.size();
+		final int PLATE_H = S + PLATE_PAD * 2;
 		List<int[]> plates = new ArrayList<>();
 		List<AbstractWidget> overlay = new ArrayList<>();
 
 		// --- Top, centered: dimensions | layer toggles. Close on the right.
 		int topY = PAD;
-		int[] groups = {Dim.values().length, 3};
-		int total = (groups[0] + groups[1]) * IconButton.SIZE + (groups[0] + groups[1] - 2) * GAP
+		int[] groups = {Dim.values().length, 4};
+		int total = (groups[0] + groups[1]) * S + (groups[0] + groups[1] - 2) * GAP
 				+ 4 * PLATE_PAD + PLATE_GAP;
 		int x = (width - total) / 2;
 		int bx = x + PLATE_PAD;
 		for (Dim dim : Dim.values()) {
-			PixelIcons icon = switch (dim) {
-				case OVERWORLD -> PixelIcons.OVERWORLD;
-				case NETHER -> PixelIcons.NETHER;
-				case END -> PixelIcons.END;
+			ToolIcon icon = switch (dim) {
+				case OVERWORLD -> ToolIcon.OVERWORLD;
+				case NETHER -> ToolIcon.NETHER;
+				case END -> ToolIcon.END;
 			};
 			overlay.add(button(icon, () -> Component.translatable("kiroxmap.dimension." + dim.key()),
-					() -> dim == session.dim, () -> switchDimension(dim)).at(bx + dim.ordinal() * (IconButton.SIZE + GAP), topY + PLATE_PAD));
+					() -> dim == session.dim, () -> switchDimension(dim)).at(bx + dim.ordinal() * (S + GAP), topY + PLATE_PAD));
 		}
-		int g1w = groups[0] * IconButton.SIZE + (groups[0] - 1) * GAP + PLATE_PAD * 2;
+		int g1w = groups[0] * S + (groups[0] - 1) * GAP + PLATE_PAD * 2;
 		plates.add(new int[] {x, topY, x + g1w, topY + PLATE_H});
 
 		x += g1w + PLATE_GAP;
-		int g2w = groups[1] * IconButton.SIZE + (groups[1] - 1) * GAP + PLATE_PAD * 2;
+		int g2w = groups[1] * S + (groups[1] - 1) * GAP + PLATE_PAD * 2;
 		bx = x + PLATE_PAD;
-		overlay.add(button(PixelIcons.GRID, () -> Component.translatable("kiroxmap.grid"), () -> config.showGrid,
+		overlay.add(button(ToolIcon.GRID, () -> Component.translatable("kiroxmap.grid"), () -> config.showGrid,
 				() -> toggle(() -> config.showGrid = !config.showGrid)).at(bx, topY + PLATE_PAD));
-		AbstractWidget slime = button(PixelIcons.SLIME, () -> Component.translatable("kiroxmap.slime"), () -> config.showSlimeChunks,
-				() -> toggle(() -> config.showSlimeChunks = !config.showSlimeChunks)).at(bx + IconButton.SIZE + GAP, topY + PLATE_PAD);
+		AbstractWidget slime = button(ToolIcon.SLIME, () -> Component.translatable("kiroxmap.slime"), () -> config.showSlimeChunks,
+				() -> toggle(() -> config.showSlimeChunks = !config.showSlimeChunks)).at(bx + S + GAP, topY + PLATE_PAD);
 		slime.active = session.dim == Dim.OVERWORLD; // slime chunks only exist in the Overworld
 		overlay.add(slime);
-		overlay.add(button(PixelIcons.LABELS, () -> Component.translatable("kiroxmap.labels"), () -> config.showLabels,
-				() -> toggle(() -> config.showLabels = !config.showLabels)).at(bx + 2 * (IconButton.SIZE + GAP), topY + PLATE_PAD));
+		overlay.add(button(ToolIcon.LABELS, () -> Component.translatable("kiroxmap.labels"), () -> config.showLabels,
+				() -> toggle(() -> config.showLabels = !config.showLabels)).at(bx + 2 * (S + GAP), topY + PLATE_PAD));
+		overlay.add(button(ToolIcon.WAYPOINT_LABELS, () -> Component.translatable("kiroxmap.waypoint_labels"), () -> config.showWaypointLabels,
+				() -> toggle(() -> config.showWaypointLabels = !config.showWaypointLabels)).at(bx + 3 * (S + GAP), topY + PLATE_PAD));
 		plates.add(new int[] {x, topY, x + g2w, topY + PLATE_H});
 
-		overlay.add(button(PixelIcons.CLOSE, () -> Component.translatable("kiroxmap.close"), () -> false, this::onClose)
-				.at(width - PAD - IconButton.SIZE, PAD));
+		overlay.add(button(ToolIcon.CLOSE, () -> Component.translatable("kiroxmap.close"), () -> false, this::onClose)
+				.at(width - PAD - S, PAD));
 
 		// --- Top left: seed.
 		int seedW = Math.clamp(width / 4, 110, 170);
-		AbstractWidget seedIcon = button(PixelIcons.SEED, () -> Component.translatable("kiroxmap.seed"), () -> false,
+		AbstractWidget seedIcon = button(ToolIcon.SEED, () -> Component.translatable("kiroxmap.seed"), () -> false,
 				() -> setFocused(seedBox)).at(PAD + PLATE_PAD, topY + PLATE_PAD);
 		overlay.add(seedIcon);
-		seedBox = new EditBox(font, PAD + PLATE_PAD + IconButton.SIZE + GAP, topY + PLATE_PAD, seedW, IconButton.SIZE,
+		seedBox = new EditBox(font, PAD + PLATE_PAD + S + GAP, topY + PLATE_PAD, seedW, S,
 				seedBox, Component.translatable("kiroxmap.seed"));
 		seedBox.setMaxLength(64);
 		seedBox.setHint(Component.translatable("kiroxmap.seed_hint"));
@@ -128,11 +130,11 @@ public final class AtlasScreen extends Screen {
 			pendingSeedAt = System.currentTimeMillis();
 		});
 		overlay.add(seedBox);
-		plates.add(new int[] {PAD, topY, PAD + PLATE_PAD * 2 + IconButton.SIZE + GAP + seedW, topY + PLATE_H});
+		plates.add(new int[] {PAD, topY, PAD + PLATE_PAD * 2 + S + GAP + seedW, topY + PLATE_H});
 
 		// --- Left column: zoom, center, copy, reset.
 		int colY = topY + PLATE_H + 14;
-		PixelIcons[] icons = {PixelIcons.ZOOM_IN, PixelIcons.ZOOM_OUT, PixelIcons.CENTER, PixelIcons.COPY, PixelIcons.RESET};
+		ToolIcon[] icons = {ToolIcon.ZOOM_IN, ToolIcon.ZOOM_OUT, ToolIcon.CENTER, ToolIcon.COPY, ToolIcon.RESET};
 		String[] keys = {"kiroxmap.zoom_in", "kiroxmap.zoom_out", "kiroxmap.center.tooltip", "kiroxmap.copy", "kiroxmap.reset"};
 		Runnable[] actions = {
 				() -> session.view.setZoom(session.view.zoom() - MapView.ZOOM_STEP * 2),
@@ -146,36 +148,52 @@ public final class AtlasScreen extends Screen {
 		for (int i = 0; i < icons.length; i++) {
 			String key = keys[i];
 			overlay.add(button(icons[i], () -> Component.translatable(key), () -> false, actions[i])
-					.at(PAD + PLATE_PAD, colY + PLATE_PAD + i * (IconButton.SIZE + GAP)));
+					.at(PAD + PLATE_PAD, colY + PLATE_PAD + i * (S + GAP)));
 		}
-		plates.add(new int[] {PAD, colY, PAD + IconButton.SIZE + PLATE_PAD * 2,
-				colY + icons.length * IconButton.SIZE + (icons.length - 1) * GAP + PLATE_PAD * 2});
+		plates.add(new int[] {PAD, colY, PAD + S + PLATE_PAD * 2,
+				colY + icons.length * S + (icons.length - 1) * GAP + PLATE_PAD * 2});
 
 		// --- Bottom center: structures, biomes, help.
 		int rowY = height - PAD - PLATE_H;
-		int rowW = 4 * IconButton.SIZE + 3 * GAP + PLATE_PAD * 2;
+		int rowW = 4 * S + 3 * GAP + PLATE_PAD * 2;
 		int rowX = (width - rowW) / 2;
-		overlay.add(button(PixelIcons.STRUCTURES, () -> Component.translatable("kiroxmap.tab.structures"),
+		overlay.add(button(ToolIcon.STRUCTURES, () -> Component.translatable("kiroxmap.tab.structures"),
 				() -> config.panelOpen && "STRUCTURES".equals(config.panelTab), () -> openPanel("STRUCTURES"))
 				.at(rowX + PLATE_PAD, rowY + PLATE_PAD));
-		overlay.add(button(PixelIcons.BIOMES, () -> Component.translatable("kiroxmap.tab.biomes"),
+		overlay.add(button(ToolIcon.BIOMES, () -> Component.translatable("kiroxmap.tab.biomes"),
 				() -> config.panelOpen && "BIOMES".equals(config.panelTab), () -> openPanel("BIOMES"))
-				.at(rowX + PLATE_PAD + IconButton.SIZE + GAP, rowY + PLATE_PAD));
-		overlay.add(button(PixelIcons.WAYPOINT, () -> Component.translatable("kiroxmap.tab.waypoints"),
+				.at(rowX + PLATE_PAD + S + GAP, rowY + PLATE_PAD));
+		overlay.add(button(ToolIcon.WAYPOINT, () -> Component.translatable("kiroxmap.tab.waypoints"),
 				() -> config.panelOpen && "WAYPOINTS".equals(config.panelTab), () -> openPanel("WAYPOINTS"))
-				.at(rowX + PLATE_PAD + 2 * (IconButton.SIZE + GAP), rowY + PLATE_PAD));
-		overlay.add(button(PixelIcons.HELP, () -> Component.translatable("kiroxmap.help"), () -> config.showHelp,
+				.at(rowX + PLATE_PAD + 2 * (S + GAP), rowY + PLATE_PAD));
+		overlay.add(button(ToolIcon.HELP, () -> Component.translatable("kiroxmap.help"), () -> config.showHelp,
 				() -> toggle(() -> config.showHelp = !config.showHelp))
-				.at(rowX + PLATE_PAD + 3 * (IconButton.SIZE + GAP), rowY + PLATE_PAD));
+				.at(rowX + PLATE_PAD + 3 * (S + GAP), rowY + PLATE_PAD));
 		plates.add(new int[] {rowX, rowY, rowX + rowW, rowY + PLATE_H});
 
-		// --- Floating panel on the right, under the close button; help list sits under it.
-		int helpLines = 5;
-		helpTop = config.showHelp ? height - PAD - helpLines * 10 - 4 : height;
+		// --- Bottom right, in the very corner: UI scale (x1 / x2 / x3).
+		int scaleX = width - PAD - PLATE_PAD * 2 - S;
+		overlay.add(new IconButton(font, () -> "x" + config.uiScale, () -> Component.translatable("kiroxmap.ui_scale"), () -> false,
+				() -> toggle(() -> config.uiScale = config.uiScale % 3 + 1)).at(scaleX + PLATE_PAD, rowY + PLATE_PAD));
+		plates.add(new int[] {scaleX, rowY, scaleX + S + PLATE_PAD * 2, rowY + PLATE_H});
+
+		// --- Help box (key list) above the UI scale button; the side panel ends above it.
+		int helpW = 0;
+		for (String key : MapCanvas.HELP_KEYS) {
+			helpW = Math.max(helpW, font.width(Component.translatable(key)));
+		}
+		helpW += 14;
+		int helpH = MapCanvas.HELP_KEYS.length * MapCanvas.HELP_LINE + 8;
+		int helpTop = config.showHelp ? rowY - 6 - helpH : rowY;
+		if (config.showHelp) {
+			plates.add(new int[] {width - PAD - helpW, helpTop, width - PAD, helpTop + helpH});
+		}
+
+		// --- Floating panel on the right, under the close button.
 		panel = null;
 		if (config.panelOpen) {
 			int pw = Math.clamp(width / 4, 150, 220);
-			int py = PAD + IconButton.SIZE + 4;
+			int py = PAD + S + 4;
 			int ph = Math.max(60, helpTop - 6 - py);
 			panel = new SidePanel(session, font, session::refreshPalette);
 			panel.setBounds(width - PAD - pw, py, pw, ph);
@@ -202,15 +220,14 @@ public final class AtlasScreen extends Screen {
 				minecraft.gui.setScreen(new WaypointScreen(AtlasScreen.this, config.waypointsFor(worldKey), waypoint, false));
 			}
 		});
-		map.setLayout(plates, topY + PLATE_H + 4, rowY - 16);
+		map.setLayout(plates, topY + PLATE_H + 4, rowY - 16, config.showHelp ? helpTop : -1);
 		for (AbstractWidget w : overlay) {
 			addRenderableOnly(w);
 		}
-		addRenderableOnly(new Hud());
 		setInitialFocus(map);
 	}
 
-	private IconButton button(PixelIcons icon, java.util.function.Supplier<Component> label,
+	private IconButton button(ToolIcon icon, java.util.function.Supplier<Component> label,
 			java.util.function.BooleanSupplier selected, Runnable action) {
 		return new IconButton(font, icon, label, selected, action);
 	}
@@ -320,38 +337,6 @@ public final class AtlasScreen extends Screen {
 	public void extractBackground(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float a) {
 		framesDrawn++;
 		graphics.fill(0, 0, width, height, 0xFF2B2B2B); // the map canvas paints over this
-	}
-
-	/** Seed label (bottom left) and key list (bottom right), drawn above the map. */
-	private final class Hud extends AbstractWidget {
-		Hud() {
-			super(0, 0, 0, 0, Component.empty());
-			active = false;
-		}
-
-		@Override
-		protected void extractWidgetRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float a) {
-			String seedLine = session.seed() != null ? Component.translatable("kiroxmap.seed").getString() + ": " + session.seed() : "";
-			if (!seedLine.isEmpty()) {
-				graphics.text(font, seedLine, PAD + 2, height - PAD - 9, 0xFFB0B0B0);
-			}
-			if (config.showHelp) {
-				String[] keys = {"kiroxmap.help.pan", "kiroxmap.help.zoom", "kiroxmap.help.copy", "kiroxmap.help.arrows", "kiroxmap.help.close"};
-				for (int i = 0; i < keys.length; i++) {
-					Component line = Component.translatable(keys[i]);
-					graphics.text(font, line, width - PAD - 2 - font.width(line), helpTop + i * 10, 0xFFB0B0B0);
-				}
-			}
-		}
-
-		@Override
-		public boolean mouseClicked(net.minecraft.client.input.MouseButtonEvent event, boolean doubleClick) {
-			return false;
-		}
-
-		@Override
-		protected void updateWidgetNarration(net.minecraft.client.gui.narration.NarrationElementOutput output) {
-		}
 	}
 
 	@Override

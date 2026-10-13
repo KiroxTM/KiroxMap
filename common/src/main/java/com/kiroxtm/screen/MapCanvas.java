@@ -1,15 +1,18 @@
 package com.kiroxtm.screen;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.EnumSet;
-import java.util.HashSet;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import com.mojang.blaze3d.platform.InputConstants;
 
 import com.kiroxtm.config.AtlasConfig;
 import com.kiroxtm.config.Waypoint;
+import com.kiroxtm.map.MapView;
 import com.kiroxtm.map.StructureLayer;
 import com.kiroxtm.map.TileCache;
 import com.kiroxtm.world.BiomeData;
@@ -44,6 +47,11 @@ final class MapCanvas extends AbstractWidget {
 	private static final int[] GRID_STEPS = {16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144};
 	private static final int SLIME_MIN_PIXELS = 3;
 	private static final int SLIME_COLOR = 0x7050E050;
+	/** Marker size at the farthest zoom, as a fraction of the base size (a 75% reduction). */
+	private static final double MIN_MARKER_SCALE = 0.25;
+	static final String[] HELP_KEYS = {"kiroxmap.help.pan", "kiroxmap.help.zoom", "kiroxmap.help.copy", "kiroxmap.help.arrows", "kiroxmap.help.close"};
+	static final int HELP_LINE = 11;
+	private static final int TEXT_H = 9;
 
 	private final AtlasSession session;
 	private final Font font;
@@ -60,6 +68,8 @@ final class MapCanvas extends AbstractWidget {
 	private Menu menu;
 	private int topInfoY = 34;
 	private int bottomInfoY;
+	/** Top of the help box, or -1 when the help is off. */
+	private int helpTop = -1;
 
 	/** Opens the waypoint editor; implemented by the screen that owns this canvas. */
 	interface WaypointHandler {
@@ -95,8 +105,9 @@ final class MapCanvas extends AbstractWidget {
 	}
 
 	/** Toolbar plates and panels drawn over the map, and where the two info lines go. */
-	void setLayout(List<int[]> uiRects, int topInfoY, int bottomInfoY) {
+	void setLayout(List<int[]> uiRects, int topInfoY, int bottomInfoY, int helpTop) {
 		this.uiRects = uiRects;
+		this.helpTop = helpTop;
 		this.topInfoY = topInfoY;
 		this.bottomInfoY = bottomInfoY;
 	}
@@ -159,6 +170,7 @@ final class MapCanvas extends AbstractWidget {
 			drawStatus(graphics);
 			drawPlates(graphics);
 			drawInfo(graphics, null);
+			drawHud(graphics);
 			return;
 		}
 
@@ -191,7 +203,35 @@ final class MapCanvas extends AbstractWidget {
 		}
 		drawPlates(graphics);
 		drawInfo(graphics, tiles);
+		drawHud(graphics);
 		drawMenu(graphics, mouseX, mouseY);
+	}
+
+	/** Seed label (bottom left) and the key list inside its plate (bottom right). */
+	private void drawHud(GuiGraphicsExtractor graphics) {
+		if (session.seed() != null) {
+			String seedLine = Component.translatable("kiroxmap.seed").getString() + ": " + session.seed();
+			graphics.text(font, seedLine, getX() + 8, getBottom() - 6 - 9, 0xFFB0B0B0);
+		}
+		if (helpTop >= 0) {
+			int widest = 0;
+			for (String key : HELP_KEYS) {
+				widest = Math.max(widest, font.width(Component.translatable(key)));
+			}
+			int x = getRight() - 6 - (widest + 14) + 7;
+			for (int i = 0; i < HELP_KEYS.length; i++) {
+				graphics.text(font, Component.translatable(HELP_KEYS[i]), x, helpTop + 5 + i * HELP_LINE, 0xFFD0D0D0);
+			}
+		}
+	}
+
+	/**
+	 * Size of structure icons and waypoint pins: full size at the base zoom (and when zoomed in),
+	 * shrinking linearly as the map is zoomed out, down to 25% at the farthest zoom.
+	 */
+	private double markerScale() {
+		double t = Math.clamp((session.view.zoom() - MapView.DEFAULT_ZOOM) / (MapView.MAX_ZOOM - MapView.DEFAULT_ZOOM), 0.0, 1.0);
+		return 1.0 - (1.0 - MIN_MARKER_SCALE) * t;
 	}
 
 	/** Message in the middle of the empty map: loading, failed, or waiting for a seed. */
@@ -267,31 +307,71 @@ final class MapCanvas extends AbstractWidget {
 				enabled.add(kind);
 			}
 		}
-		layer.update(enabled, worldX(getX()), worldZ(getY()), worldX(getRight()), worldZ(getBottom()));
+		double scale = markerScale();
+		int cell = Math.max(4, (int) Math.round(ICON * scale)); // icons are smaller when zoomed out, so more fit
+		// Look a little past the screen edge: an icon just outside can still hide one just inside.
+		int margin = 2 * ICON;
+		layer.update(enabled, worldX(getX() - margin), worldZ(getY() - margin), worldX(getRight() + margin), worldZ(getBottom() + margin));
 
-		Set<Long> occupied = new HashSet<>();
-		// Strongholds and end ships are rare and sought after: they claim their cell first.
+		// Which icon wins when several overlap must not depend on the order the layer lists them in
+		// (that changes while panning and caused icons to swap): rare ones first, then a fixed order.
 		List<StructureIndex.Found> candidates = new ArrayList<>(layer.found());
-		candidates.sort((p, q) -> Integer.compare(priority(p.kind()), priority(q.kind())));
+		candidates.sort(Comparator.comparingInt((StructureIndex.Found f) -> priority(f.kind()))
+				.thenComparingInt(f -> f.kind().ordinal()).thenComparingInt(StructureIndex.Found::x).thenComparingInt(StructureIndex.Found::z));
+
+		// Accepted icons, bucketed so the overlap test only looks at the neighbouring buckets.
+		Map<Long, List<int[]>> placed = new HashMap<>();
 		for (StructureIndex.Found found : candidates) {
 			if (!enabled.contains(found.kind())) {
 				continue;
 			}
 			int x = guiX(found.x()), y = guiY(found.z());
-			if (x < getX() - ICON || x > getRight() + ICON || y < getY() - ICON || y > getBottom() + ICON
-					|| !occupied.add(((long) Math.floorDiv(x, ICON) << 32) | (Math.floorDiv(y, ICON) & 0xFFFFFFFFL))) {
+			int bx = Math.floorDiv(x, cell), by = Math.floorDiv(y, cell);
+			boolean blocked = false;
+			for (int ox = -1; ox <= 1 && !blocked; ox++) {
+				for (int oy = -1; oy <= 1 && !blocked; oy++) {
+					List<int[]> bucket = placed.get(bucketKey(bx + ox, by + oy));
+					if (bucket != null) {
+						for (int[] other : bucket) {
+							if (Math.abs(other[0] - x) < cell && Math.abs(other[1] - y) < cell) {
+								blocked = true;
+								break;
+							}
+						}
+					}
+				}
+			}
+			if (blocked) {
 				continue;
 			}
+			placed.computeIfAbsent(bucketKey(bx, by), k -> new ArrayList<>(2)).add(new int[] {x, y});
+			if (x < getX() - ICON || x > getRight() + ICON || y < getY() - ICON || y > getBottom() + ICON) {
+				continue; // off screen: it still claimed its spot above, it just is not drawn
+			}
 			shown.add(found);
-			graphics.fakeItem(Icons.of(found.kind()), x - ICON / 2, y - ICON / 2);
+			if (scale >= 0.999) {
+				graphics.fakeItem(Icons.of(found.kind()), x - ICON / 2, y - ICON / 2);
+			} else {
+				var pose = graphics.pose();
+				pose.pushMatrix();
+				pose.translate(x, y);
+				pose.scale((float) scale, (float) scale);
+				graphics.fakeItem(Icons.of(found.kind()), -ICON / 2, -ICON / 2);
+				pose.popMatrix();
+			}
 			if (config.showLabels) {
 				Component name = Component.translatable("kiroxmap.structure." + found.kind().key());
 				int w = font.width(name);
-				graphics.fill(x - w / 2 - 2, y + ICON / 2, x + w / 2 + 2, y + ICON / 2 + 10, 0xA0000000);
-				graphics.centeredText(font, name, x, y + ICON / 2 + 1, 0xFFFFFFFF);
+				int ly = y + cell / 2;
+				graphics.fill(x - w / 2 - 2, ly, x + w / 2 + 2, ly + 10, 0xA0000000);
+				graphics.centeredText(font, name, x, ly + 1, 0xFFFFFFFF);
 			}
 		}
 		return shown;
+	}
+
+	private static long bucketKey(int bx, int by) {
+		return ((long) bx << 32) | (by & 0xFFFFFFFFL);
 	}
 
 	private static int priority(StructureKind kind) {
@@ -300,7 +380,8 @@ final class MapCanvas extends AbstractWidget {
 
 	private StructureIndex.Found nearest(List<StructureIndex.Found> shown, int mouseX, int mouseY) {
 		StructureIndex.Found best = null;
-		double bestDist = ICON * ICON / 4.0;
+		double half = Math.max(4, ICON * markerScale() / 2);
+		double bestDist = half * half;
 		for (StructureIndex.Found found : shown) {
 			double dx = guiX(found.x()) - mouseX, dz = guiY(found.z()) - mouseY;
 			double dist = dx * dx + dz * dz;
@@ -327,7 +408,8 @@ final class MapCanvas extends AbstractWidget {
 	/** The topmost waypoint marker under a screen position, or null. */
 	private Waypoint waypointAt(double mouseX, double mouseY) {
 		Waypoint best = null;
-		double bestDist = 8 * 8;
+		double reach = Math.max(4, 8 * markerScale());
+		double bestDist = reach * reach;
 		for (Waypoint w : waypointsHere()) {
 			double dx = guiX(w.x + 0.5) - mouseX, dy = guiY(w.z + 0.5) - mouseY;
 			double dist = dx * dx + dy * dy;
@@ -340,32 +422,70 @@ final class MapCanvas extends AbstractWidget {
 	}
 
 	/**
-	 * Waypoint pins are always visible; their name is only shown while the cursor is on one (unlike
-	 * structure labels, which follow the "labels" switch).
+	 * Waypoint pins are always visible. Names are shown for the pin under the cursor (name and
+	 * coordinates card) and, when the waypoint-labels switch is on, under every pin. Pins keep their
+	 * design at every zoom: only their size changes.
 	 */
 	private void drawWaypoints(GuiGraphicsExtractor graphics, Waypoint hovered) {
+		double scale = markerScale();
+		int r = Math.max(2, (int) Math.round(5 * scale));
 		for (Waypoint w : waypointsHere()) {
-			if (w != hovered) {
-				drawPin(graphics, guiX(w.x + 0.5), guiY(w.z + 0.5), w.color, false);
+			if (w == hovered) {
+				continue;
+			}
+			int x = guiX(w.x + 0.5), y = guiY(w.z + 0.5);
+			drawPin(graphics, x, y, w.color, false, scale);
+			if (config.showWaypointLabels) {
+				String name = waypointName(w);
+				int tw = font.width(name);
+				int ly = y + r + 3;
+				graphics.fill(x - tw / 2 - 2, ly, x + tw / 2 + 3, ly + TEXT_H + 2, 0xA0000000);
+				graphics.text(font, name, x - tw / 2, ly + 2, 0xFFFFFFFF);
 			}
 		}
-		if (hovered != null) { // drawn last so it sits on top of any neighbour
-			int x = guiX(hovered.x + 0.5), y = guiY(hovered.z + 0.5);
-			drawPin(graphics, x, y, hovered.color, true);
-			String name = hovered.name.isEmpty() ? Component.translatable("kiroxmap.waypoint.default_name").getString() : hovered.name;
-			String coords = hovered.x + ", " + hovered.z;
-			int w = Math.max(font.width(name), font.width(coords)) + 10;
-			int bx = x - w / 2, by = y - 12 - 24;
-			graphics.fill(bx - 1, by - 1, bx + w + 1, by + 23, 0xFF000000);
-			graphics.fill(bx, by, bx + w, by + 22, 0xF01C1C1C);
-			graphics.fill(bx, by, bx + w, by + 2, hovered.color);
-			graphics.text(font, name, x - font.width(name) / 2, by + 5, 0xFFFFFFFF);
-			graphics.text(font, coords, x - font.width(coords) / 2, by + 13, 0xFF9A9A9A);
+		if (hovered == null) {
+			return;
 		}
+		// Drawn last so it sits on top of any neighbour.
+		int x = guiX(hovered.x + 0.5), y = guiY(hovered.z + 0.5);
+		int hr = (int) Math.ceil(6 * scale);
+		drawPin(graphics, x, y, hovered.color, true, scale);
+		String name = waypointName(hovered);
+		String coords = hovered.x + ", " + hovered.z;
+		int w = Math.max(font.width(name), font.width(coords)) + 12;
+		int h = 2 + 5 + TEXT_H + 3 + TEXT_H + 5; // accent bar, padding, name, gap, coordinates, padding
+		int bx = Math.max(getX() + 2, Math.min(x - w / 2, getRight() - w - 2));
+		int by = y - hr - 4 - h;
+		if (by < getY() + 2) { // no room above: put the card under the pin
+			by = y + hr + 4;
+		}
+		graphics.fill(bx - 1, by - 1, bx + w + 1, by + h + 1, 0xFF000000);
+		graphics.fill(bx, by, bx + w, by + h, 0xF01C1C1C);
+		graphics.fill(bx, by, bx + w, by + 2, hovered.color);
+		graphics.text(font, name, bx + (w - font.width(name)) / 2, by + 2 + 5, 0xFFFFFFFF);
+		graphics.text(font, coords, bx + (w - font.width(coords)) / 2, by + 2 + 5 + TEXT_H + 3, 0xFF9A9A9A);
 	}
 
-	/** A map pin centered on (x, y): a colored diamond with a dark outline and a highlight. */
-	private static void drawPin(GuiGraphicsExtractor graphics, int x, int y, int color, boolean big) {
+	private static String waypointName(Waypoint w) {
+		return w.name.isEmpty() ? Component.translatable("kiroxmap.waypoint.default_name").getString() : w.name;
+	}
+
+	/** A map pin centered on (x, y), scaled by {@code scale}; the design never changes. */
+	private static void drawPin(GuiGraphicsExtractor graphics, int x, int y, int color, boolean big, double scale) {
+		if (scale >= 0.999) {
+			drawPinShape(graphics, x, y, color, big);
+			return;
+		}
+		var pose = graphics.pose();
+		pose.pushMatrix();
+		pose.translate(x, y);
+		pose.scale((float) scale, (float) scale);
+		drawPinShape(graphics, 0, 0, color, big);
+		pose.popMatrix();
+	}
+
+	/** A colored diamond with a dark outline and a highlight. */
+	private static void drawPinShape(GuiGraphicsExtractor graphics, int x, int y, int color, boolean big) {
 		int r = big ? 6 : 5;
 		for (int dy = -r; dy <= r; dy++) {
 			int half = r - Math.abs(dy);
@@ -459,7 +579,7 @@ final class MapCanvas extends AbstractWidget {
 		}
 		int x = guiX(player.getX() * scale), y = guiY(player.getZ() * scale);
 		boolean linked = actual != session.dim;
-		int accent = linked ? 0xFFA0A0A0 : 0xFFFFE040;
+		int accent = linked ? 0xFFA0A0A0 : 0xFFFFFFFF;
 
 		// Heading: Minecraft yaw 0 faces +Z (south), 90 faces -X (west).
 		double yaw = Math.toRadians(player.getYRot());
@@ -488,18 +608,26 @@ final class MapCanvas extends AbstractWidget {
 			graphics.fill(x - 3, y - 3, x + 3, y + 3, 0x80000000);
 		}
 
-		// Arrowhead: dark outline first, then the colored triangle on top.
-		for (int pass = 0; pass < 2; pass++) {
-			double grow = pass == 0 ? 1.0 : 0;
-			double baseU = 5 - grow, tipU = 10.5 + grow * 1.6, slope = 0.85;
-			int c = pass == 0 ? 0xFF000000 : accent;
-			for (int dy = -13; dy <= 13; dy++) {
-				for (int dx = -13; dx <= 13; dx++) {
-					double u = dx * fx + dy * fz, v = -dx * fz + dy * fx;
-					if (u >= baseU && u <= tipU && Math.abs(v) <= (tipU - u) * slope + (pass == 0 ? 0.5 : 0)) {
-						graphics.fill(x + dx, y + dy, x + dx + 1, y + dy + 1, c);
-					}
+		// Arrowhead: a white chevron with a gray border (and a soft dark halo), pointing where the
+		// player looks. Pixels are tested against the polygon in the player's own frame (u ahead,
+		// v sideways), so it rotates smoothly with the view.
+		int fill = linked ? 0xFFB4B4B4 : 0xFFFFFFFF;
+		int fillShade = linked ? 0xFF9C9C9C : 0xFFD6D6D6;
+		int border = linked ? 0xFF4A4A4A : 0xFF6E6E6E;
+		for (int dy = -17; dy <= 17; dy++) {
+			for (int dx = -17; dx <= 17; dx++) {
+				double px = dx + 0.5, py = dy + 0.5;
+				double u = px * fx + py * fz, v = -px * fz + py * fx;
+				double d = arrowDistance(u, v);
+				int c;
+				if (arrowContains(u, v)) {
+					c = d < 1.0 ? border : v > 0 ? fillShade : fill;
+				} else if (d < 1.3) {
+					c = 0xB0000000;
+				} else {
+					continue;
 				}
+				graphics.fill(x + dx, y + dy, x + dx + 1, y + dy + 1, c);
 			}
 		}
 
@@ -511,11 +639,43 @@ final class MapCanvas extends AbstractWidget {
 		return hovered;
 	}
 
-	/** A centered line of text on a translucent dark pill, so it stays readable over any biome. */
+	/** Arrowhead outline in the player's frame {u ahead, v sideways}: tip, right wing, notch, left wing. */
+	private static final double[][] ARROW = {{15, 0}, {5, 6.5}, {8.5, 0}, {5, -6.5}};
+
+	private static boolean arrowContains(double u, double v) {
+		boolean inside = false;
+		for (int i = 0, j = ARROW.length - 1; i < ARROW.length; j = i++) {
+			double ui = ARROW[i][0], vi = ARROW[i][1], uj = ARROW[j][0], vj = ARROW[j][1];
+			if ((vi > v) != (vj > v) && u < (uj - ui) * (v - vi) / (vj - vi) + ui) {
+				inside = !inside;
+			}
+		}
+		return inside;
+	}
+
+	/** Distance from (u, v) to the nearest edge of the arrowhead. */
+	private static double arrowDistance(double u, double v) {
+		double best = Double.MAX_VALUE;
+		for (int i = 0, j = ARROW.length - 1; i < ARROW.length; j = i++) {
+			double au = ARROW[j][0], av = ARROW[j][1], bu = ARROW[i][0], bv = ARROW[i][1];
+			double eu = bu - au, ev = bv - av;
+			double t = Math.clamp(((u - au) * eu + (v - av) * ev) / (eu * eu + ev * ev), 0.0, 1.0);
+			best = Math.min(best, Math.hypot(u - (au + t * eu), v - (av + t * ev)));
+		}
+		return best;
+	}
+
+	/** A centered line of text on a translucent dark pill, scaled with the UI scale setting. */
 	private void pill(GuiGraphicsExtractor graphics, String text, int centerX, int y, int color) {
 		int w = font.width(text);
-		graphics.fill(centerX - w / 2 - 4, y - 2, centerX + w / 2 + 4, y + 10, PILL);
-		graphics.text(font, text, centerX - w / 2, y, color);
+		var pose = graphics.pose();
+		pose.pushMatrix();
+		pose.translate(centerX, y);
+		float f = (float) IconButton.factor();
+		pose.scale(f, f);
+		graphics.fill(-w / 2 - 4, -2, w / 2 + 4, 10, PILL);
+		graphics.text(font, text, -w / 2, 0, color);
+		pose.popMatrix();
 	}
 
 	/** Top line: the player and the view. Bottom line: whatever is under the cursor. */
@@ -566,11 +726,17 @@ final class MapCanvas extends AbstractWidget {
 					+ "  |  " + Component.translatable("kiroxmap.chunk").getString() + ": "
 					+ Math.floorDiv(hoverX, 16) + ", " + Math.floorDiv(hoverZ, 16);
 			int w = font.width(line) + 14;
-			int x0 = cx - w / 2;
-			graphics.fill(x0 - 4, bottomInfoY - 2, x0 + w + 4, bottomInfoY + 10, PILL);
-			graphics.fill(x0, bottomInfoY, x0 + 10, bottomInfoY + 8, 0xFF000000);
-			graphics.fill(x0 + 1, bottomInfoY + 1, x0 + 9, bottomInfoY + 7, BiomeData.color(id));
-			graphics.text(font, line, x0 + 14, bottomInfoY, 0xFFFFFFFF);
+			int x0 = -w / 2;
+			var pose = graphics.pose();
+			pose.pushMatrix();
+			pose.translate(cx, bottomInfoY);
+			float f = (float) IconButton.factor();
+			pose.scale(f, f);
+			graphics.fill(x0 - 4, -2, x0 + w + 4, 10, PILL);
+			graphics.fill(x0, 0, x0 + 10, 8, 0xFF000000);
+			graphics.fill(x0 + 1, 1, x0 + 9, 7, BiomeData.color(id));
+			graphics.text(font, line, x0 + 14, 0, 0xFFFFFFFF);
+			pose.popMatrix();
 		}
 	}
 

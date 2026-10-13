@@ -77,5 +77,7 @@
   "kiroxmap.config.title": "Kirox Map",
   "kiroxmap.config.key": "Abrir el mapa: %s",
   "kiroxmap.config.key_hint": "Cámbiala en Opciones > Controles > Kirox Map",
-  "kiroxmap.config.panel": "Panel lateral abierto"
+  "kiroxmap.config.panel": "Panel lateral abierto",
+  "kiroxmap.waypoint_labels": "Etiquetas de waypoints",
+  "kiroxmap.ui_scale": "Escala de la interfaz"
 }

@@ -29,9 +29,13 @@ public final class AtlasConfig {
 	public boolean showGrid = true;
 	public boolean showSlimeChunks = false;
 	public boolean showLabels = false;
+	/** Show every waypoint's name on the map (not only the one under the cursor). */
+	public boolean showWaypointLabels = false;
+	/** Toolbar scale: 1, 2 or 3. 3 is the original size. */
+	public int uiScale = 3;
 	public boolean panelOpen = true;
 	/** The key-bindings list in the bottom-right corner. */
-	public boolean showHelp = true;
+	public boolean showHelp = false;
 	/** "STRUCTURES" or "BIOMES". */
 	public String panelTab = "STRUCTURES";
 
@@ -102,6 +106,7 @@ public final class AtlasConfig {
 		if (seeds == null) seeds = new LinkedHashMap<>();
 		if (waypoints == null) waypoints = new LinkedHashMap<>();
 		if (panelTab == null) panelTab = "STRUCTURES";
+		uiScale = Math.clamp(uiScale, 1, 3);
 		return this;
 	}
 

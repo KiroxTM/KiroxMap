@@ -19,7 +19,7 @@ Client-side only. Bundles dev.xpple:cubiomes (LGPL-3.0).'''
 [[dependencies.${mod_id}]]
 modId = "neoforge"
 type = "required"
-versionRange = "[${neoforge_version},)"
+versionRange = "[${neoforge_min_version},26.4.0.0-beta)"
 ordering = "NONE"
 side = "CLIENT"
 
