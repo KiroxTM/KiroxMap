@@ -79,5 +79,8 @@
   "kiroxmap.config.key_hint": "Cámbiala en Opciones > Controles > Kirox Map",
   "kiroxmap.config.panel": "Panel lateral abierto",
   "kiroxmap.waypoint_labels": "Etiquetas de waypoints",
-  "kiroxmap.ui_scale": "Escala de la interfaz"
+  "kiroxmap.ui_scale": "Escala de la interfaz",
+  "kiroxmap.regen": "Regenerar mapa (borra los datos guardados)",
+  "kiroxmap.regen.done": "Datos guardados borrados; regenerando...",
+  "kiroxmap.relief": "Relieve del terreno"
 }

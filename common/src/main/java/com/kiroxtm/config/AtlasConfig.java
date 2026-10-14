@@ -31,6 +31,10 @@ public final class AtlasConfig {
 	public boolean showLabels = false;
 	/** Show every waypoint's name on the map (not only the one under the cursor). */
 	public boolean showWaypointLabels = false;
+	/** Terrain relief (hillshade) over the biome colors, where cubiomes can provide heights. */
+	public boolean showRelief = true;
+	/** Keep computed tiles and structure positions on disk between sessions ({@code kirox-map-cache/}). */
+	public boolean diskCache = true;
 	/** Toolbar scale: 1, 2 or 3. 3 is the original size. */
 	public int uiScale = 3;
 	public boolean panelOpen = true;

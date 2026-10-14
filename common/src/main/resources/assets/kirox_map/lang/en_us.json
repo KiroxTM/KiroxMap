@@ -79,5 +79,8 @@
   "kiroxmap.config.key_hint": "Change it in Options > Controls > Kirox Map",
   "kiroxmap.config.panel": "Side panel open",
   "kiroxmap.waypoint_labels": "Waypoint labels",
-  "kiroxmap.ui_scale": "UI scale"
+  "kiroxmap.ui_scale": "UI scale",
+  "kiroxmap.regen": "Regenerate map (clears saved data)",
+  "kiroxmap.regen.done": "Saved map data cleared; regenerating...",
+  "kiroxmap.relief": "Terrain relief"
 }
