@@ -57,9 +57,10 @@ Switch dimensions from the toolbar and explore each one:
 
 - **Your way:** turn each structure type on or off from the side panel, each with its own icon on the map.
 - **Focus:** hide the biomes you do not care about and the rest stand out.
-- **Optional layers:** chunk grid, slime chunks and structure labels.
+- **Optional layers:** chunk grid, slime chunks, structure labels, waypoint labels and terrain relief.
+- **Terrain relief:** hills, mountains and coasts are shaded on top of the biome colors, in the Overworld and (zoomed in) in the End. It is an approximation computed from the seed, not the exact blocks, and the Nether has none. Turn it off with its toolbar button.
 - **Details on hover:** hover over anything for its name and coordinates. Right-click to copy coordinates.
-- **Fast:** smooth zoom and panning. Tiles are generated in the background and cached.
+- **Fast:** smooth zoom and panning. Tiles are generated in the background and cached on disk, so a world you have already viewed opens instantly.
 
 | Structures panel | Biomes panel |
 | :---: | :---: |
@@ -90,9 +91,9 @@ Edit or delete them at any time, and show or hide them from the waypoints list. 
 ## Seed: automatic or manual
 
 - **Singleplayer:** the seed is detected automatically.
-- **Multiplayer:** type the server's seed once in the box at the top left and it is remembered for that server.
+- **Multiplayer:** click the seed button at the top left, type the server's seed once in the box that appears and it is remembered for that server.
 
-The map always shows what the seed generates, not what you have explored. Predictions come from the [cubiomes](https://github.com/Cubitect/cubiomes) library, so in rare cases a structure position can differ slightly from the game.
+The map always shows what the seed generates, not what you have explored. Everything is predicted by [cubiomes](https://github.com/Cubitect/cubiomes) (see [Credits](#credits-and-license)), so in rare cases a structure position or a height can differ slightly from the game.
 
 ---
 
@@ -120,4 +121,10 @@ The jars are generated in `fabric/build/libs/` and `neoforge/build/libs/` (use t
 
 ## Credits and license
 
-Made by **Kirox**. Seed math by [cubiomes](https://github.com/Cubitect/cubiomes), bundled through `dev.xpple:cubiomes` (LGPL-3.0). The mod is licensed under **CC0-1.0**.
+Made by **Kirox**.
+
+**World generation core.** All the seed math (biomes, structure placement and the terrain heights behind the relief) comes from **[cubiomes](https://github.com/Cubitect/cubiomes)**, the C library by **Cubitect** (MIT), through its actively maintained fork **[xpple/cubiomes](https://github.com/xpple/cubiomes)** by **xpple**, which keeps it up to date with new Minecraft versions. KiroxMap uses that fork's Java bindings, **[`dev.xpple:cubiomes`](https://github.com/xpple/cubiomes/tree/java-bindings)** (LGPL-3.0), bundled inside the jar together with the native library. This mod would not exist without that work: thank you both.
+
+The mod's own code is licensed under **CC0-1.0**. The bundled cubiomes bindings keep their own licenses.
+
+For maintainers: the versions, the core's API and how to update it are written down in [`CORE_CONTEXT.md`](CORE_CONTEXT.md).
