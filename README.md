@@ -103,7 +103,7 @@ The map always shows what the seed generates, not what you have explored. Everyt
 2. Drop the mod `.jar` into your `mods` folder.
 3. Press **M** in game (changeable in *Controls*).
 
-Requires **Java 25**. No server-side install needed.
+Requires **Java 25**. No server-side install needed...
 
 ## Building from source
 
