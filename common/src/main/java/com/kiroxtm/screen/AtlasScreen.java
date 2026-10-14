@@ -48,10 +48,6 @@ public final class AtlasScreen extends Screen {
 	private final AtlasConfig config = AtlasConfig.get();
 	private String worldKey = "none";
 	private EditBox seedBox;
-	/** The seed input is hidden until the seed button is clicked. */
-	private boolean seedOpen;
-	/** Give the seed box keyboard focus on the next layout (set when it has just been opened). */
-	private boolean focusSeed;
 	private MapCanvas map;
 	private SidePanel panel;
 	private String pendingSeedText;
@@ -82,7 +78,7 @@ public final class AtlasScreen extends Screen {
 
 		// --- Top, centered: dimensions | layer toggles. Close on the right.
 		int topY = PAD;
-		int[] groups = {Dim.values().length, 5};
+		int[] groups = {Dim.values().length, 4};
 		int total = (groups[0] + groups[1]) * S + (groups[0] + groups[1] - 2) * GAP
 				+ 4 * PLATE_PAD + PLATE_GAP;
 		int x = (width - total) / 2;
@@ -112,54 +108,32 @@ public final class AtlasScreen extends Screen {
 				() -> toggle(() -> config.showLabels = !config.showLabels)).at(bx + 2 * (S + GAP), topY + PLATE_PAD));
 		overlay.add(button(ToolIcon.WAYPOINT_LABELS, () -> Component.translatable("kiroxmap.waypoint_labels"), () -> config.showWaypointLabels,
 				() -> toggle(() -> config.showWaypointLabels = !config.showWaypointLabels)).at(bx + 3 * (S + GAP), topY + PLATE_PAD));
-		AbstractWidget relief = button(ToolIcon.RELIEF, () -> Component.translatable("kiroxmap.relief"), () -> config.showRelief,
-				() -> toggle(() -> {
-					config.showRelief = !config.showRelief;
-					session.applyRelief();
-				})).at(bx + 4 * (S + GAP), topY + PLATE_PAD);
-		relief.active = session.dim != Dim.NETHER; // cubiomes has no terrain heights for the Nether
-		overlay.add(relief);
 		plates.add(new int[] {x, topY, x + g2w, topY + PLATE_H});
 
 		overlay.add(button(ToolIcon.CLOSE, () -> Component.translatable("kiroxmap.close"), () -> false, this::onClose)
 				.at(width - PAD - S, PAD));
 
-		// --- Top left: seed button. The input box is hidden until the button is clicked; it then
-		// shows the current seed and accepts a new one. Clicking the button again hides it.
-		AbstractWidget seedIcon = button(ToolIcon.SEED, () -> Component.translatable("kiroxmap.seed"), () -> seedOpen,
-				this::toggleSeedBox).at(PAD + PLATE_PAD, topY + PLATE_PAD);
+		// --- Top left: seed.
+		int seedW = Math.clamp(width / 4, 110, 170);
+		AbstractWidget seedIcon = button(ToolIcon.SEED, () -> Component.translatable("kiroxmap.seed"), () -> false,
+				() -> setFocused(seedBox)).at(PAD + PLATE_PAD, topY + PLATE_PAD);
 		overlay.add(seedIcon);
-		int seedPlateRight = PAD + PLATE_PAD * 2 + S;
-		EditBox previousSeedBox = seedOpen ? seedBox : null; // keeps what is being typed across a rebuild
-		seedBox = null;
-		if (seedOpen) {
-			int seedW = Math.clamp(width / 4, 110, 170);
-			seedBox = new EditBox(font, PAD + PLATE_PAD + S + GAP, topY + PLATE_PAD, seedW, S,
-					previousSeedBox, Component.translatable("kiroxmap.seed"));
-			seedBox.setMaxLength(64);
-			seedBox.setHint(Component.translatable("kiroxmap.seed_hint"));
-			if (seedBox.getValue().isEmpty()) {
-				seedBox.setValue(session.seedText);
-			}
-			seedBox.setResponder(text -> {
-				pendingSeedText = text;
-				pendingSeedAt = System.currentTimeMillis();
-			});
-			overlay.add(seedBox);
-			seedPlateRight += GAP + seedW;
+		seedBox = new EditBox(font, PAD + PLATE_PAD + S + GAP, topY + PLATE_PAD, seedW, S,
+				seedBox, Component.translatable("kiroxmap.seed"));
+		seedBox.setMaxLength(64);
+		seedBox.setHint(Component.translatable("kiroxmap.seed_hint"));
+		if (seedBox.getValue().isEmpty()) {
+			seedBox.setValue(session.seedText);
 		}
-		plates.add(new int[] {PAD, topY, seedPlateRight, topY + PLATE_H});
-
-		// --- Just under the seed: regenerate. Deletes the saved map data of this seed and computes it again.
-		int regenY = topY + PLATE_H + 4;
-		IconButton regen = button(ToolIcon.REGEN, () -> Component.translatable("kiroxmap.regen"), () -> false, this::regenerate)
-				.at(PAD + PLATE_PAD, regenY + PLATE_PAD);
-		regen.active = worldShown && session.seed() != null;
-		overlay.add(regen);
-		plates.add(new int[] {PAD, regenY, PAD + PLATE_PAD * 2 + S, regenY + PLATE_H});
+		seedBox.setResponder(text -> {
+			pendingSeedText = text;
+			pendingSeedAt = System.currentTimeMillis();
+		});
+		overlay.add(seedBox);
+		plates.add(new int[] {PAD, topY, PAD + PLATE_PAD * 2 + S + GAP + seedW, topY + PLATE_H});
 
 		// --- Left column: zoom, center, copy, reset.
-		int colY = regenY + PLATE_H + 8;
+		int colY = topY + PLATE_H + 14;
 		ToolIcon[] icons = {ToolIcon.ZOOM_IN, ToolIcon.ZOOM_OUT, ToolIcon.CENTER, ToolIcon.COPY, ToolIcon.RESET};
 		String[] keys = {"kiroxmap.zoom_in", "kiroxmap.zoom_out", "kiroxmap.center.tooltip", "kiroxmap.copy", "kiroxmap.reset"};
 		Runnable[] actions = {
@@ -197,29 +171,33 @@ public final class AtlasScreen extends Screen {
 				.at(rowX + PLATE_PAD + 3 * (S + GAP), rowY + PLATE_PAD));
 		plates.add(new int[] {rowX, rowY, rowX + rowW, rowY + PLATE_H});
 
-		// --- Bottom right, in the very corner: UI scale. One click cycles x1 -> x2 -> x3; the tooltip
-		// shows the current value.
+		// --- Bottom right, in the very corner: UI scale (x1 / x2 / x3).
 		int scaleX = width - PAD - PLATE_PAD * 2 - S;
-		overlay.add(button(ToolIcon.SCALE,
-				() -> Component.translatable("kiroxmap.ui_scale").append(Component.literal(" x" + config.uiScale)),
-				() -> false, () -> toggle(() -> config.uiScale = config.uiScale % 3 + 1)).at(scaleX + PLATE_PAD, rowY + PLATE_PAD));
+		overlay.add(new IconButton(font, () -> "x" + config.uiScale, () -> Component.translatable("kiroxmap.ui_scale"), () -> false,
+				() -> toggle(() -> config.uiScale = config.uiScale % 3 + 1)).at(scaleX + PLATE_PAD, rowY + PLATE_PAD));
 		plates.add(new int[] {scaleX, rowY, scaleX + S + PLATE_PAD * 2, rowY + PLATE_H});
 
-		// --- Help text (key list) above the UI scale button; the side panel ends above it. It has no
-		// box of its own (the text is drawn straight over the map) and follows the UI scale.
-		double scale = IconButton.factor();
-		int helpH = (int) Math.round((MapCanvas.HELP_KEYS.length * MapCanvas.HELP_LINE + 8) * scale);
+		// --- Help box (key list) above the UI scale button; the side panel ends above it.
+		int helpW = 0;
+		for (String key : MapCanvas.HELP_KEYS) {
+			helpW = Math.max(helpW, font.width(Component.translatable(key)));
+		}
+		helpW += 14;
+		int helpH = MapCanvas.HELP_KEYS.length * MapCanvas.HELP_LINE + 8;
 		int helpTop = config.showHelp ? rowY - 6 - helpH : rowY;
+		if (config.showHelp) {
+			plates.add(new int[] {width - PAD - helpW, helpTop, width - PAD, helpTop + helpH});
+		}
 
-		// --- Floating panel on the right, under the close button. Its size follows the UI scale too.
+		// --- Floating panel on the right, under the close button.
 		panel = null;
 		if (config.panelOpen) {
-			int pw = (int) Math.round(Math.clamp(width / 4, 150, 220) * scale);
+			int pw = Math.clamp(width / 4, 150, 220);
 			int py = PAD + S + 4;
-			int ph = Math.max((int) Math.round(60 * scale), helpTop - 6 - py);
+			int ph = Math.max(60, helpTop - 6 - py);
 			panel = new SidePanel(session, font, session::refreshPalette);
-			panel.setBounds(width - PAD - pw, py, pw, ph, scale);
-			plates.add(new int[] {width - PAD - pw - 1, py - 1, width - PAD + 1, py + ph + 1});
+			panel.setBounds(width - PAD - pw, py, pw, ph);
+			plates.add(new int[] {width - PAD - pw - 1, py - 1, width - PAD - pw + pw + 1, py + ph + 1});
 			overlay.add(0, panel);
 		}
 
@@ -246,31 +224,7 @@ public final class AtlasScreen extends Screen {
 		for (AbstractWidget w : overlay) {
 			addRenderableOnly(w);
 		}
-		if (seedBox != null && focusSeed) {
-			focusSeed = false;
-			setInitialFocus(seedBox); // just opened with the seed button: ready to type
-		} else {
-			setInitialFocus(map);
-		}
-	}
-
-	/** Clears the saved data of the current seed and rebuilds the map from scratch. */
-	private void regenerate() {
-		if (!worldShown || session.seed() == null) {
-			return;
-		}
-		session.regenerate();
-		if (map != null) {
-			map.toast(Component.translatable("kiroxmap.regen.done").getString());
-		}
-		rebuildPending = true; // the biome list is rebuilt for the new world
-	}
-
-	/** Shows or hides the seed input box (hidden by default). The layout is rebuilt on the next tick. */
-	private void toggleSeedBox() {
-		seedOpen = !seedOpen;
-		focusSeed = seedOpen;
-		rebuildPending = true;
+		setInitialFocus(map);
 	}
 
 	private IconButton button(ToolIcon icon, java.util.function.Supplier<Component> label,
@@ -415,7 +369,6 @@ public final class AtlasScreen extends Screen {
 			pendingSeedText = null;
 		}
 		config.save();
-		session.flush(); // save newly found structures to the disk cache
 	}
 
 	static Dim dimOf(Player player) {

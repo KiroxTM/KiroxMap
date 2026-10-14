@@ -10,7 +10,6 @@ import java.util.Set;
 
 import com.mojang.blaze3d.platform.InputConstants;
 
-import com.kiroxtm.KiroxMap;
 import com.kiroxtm.config.AtlasConfig;
 import com.kiroxtm.config.Waypoint;
 import com.kiroxtm.map.MapView;
@@ -48,14 +47,8 @@ final class MapCanvas extends AbstractWidget {
 	private static final int[] GRID_STEPS = {16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144};
 	private static final int SLIME_MIN_PIXELS = 3;
 	private static final int SLIME_COLOR = 0x7050E050;
-	/** Marker size curve: at SCALE_BPP[i] blocks/pixel (the number in the top bar) markers are SCALE_VALUE[i] of full size. */
-	private static final double[] SCALE_BPP = {4, 6, MapView.MAX_BLOCKS_PER_PIXEL};
-	private static final double[] SCALE_VALUE = {1.0, 0.875, 0.625};
-	private static final double[] SCALE_ZOOM = zooms(SCALE_BPP);
-	/** Smallest size factor of label text (labels are text: below this they become unreadable). */
-	private static final double MIN_LABEL_SCALE = 0.5;
-	/** Two markers closer than this fraction of an icon are not both drawn (a little overlap is allowed). */
-	private static final double COLLISION = 0.8;
+	/** Marker size at the farthest zoom, as a fraction of the base size (a 75% reduction). */
+	private static final double MIN_MARKER_SCALE = 0.25;
 	static final String[] HELP_KEYS = {"kiroxmap.help.pan", "kiroxmap.help.zoom", "kiroxmap.help.copy", "kiroxmap.help.arrows", "kiroxmap.help.close"};
 	static final int HELP_LINE = 11;
 	private static final int TEXT_H = 9;
@@ -214,97 +207,31 @@ final class MapCanvas extends AbstractWidget {
 		drawMenu(graphics, mouseX, mouseY);
 	}
 
-	/**
-	 * Mod name and version with the seed under it (bottom left) and the key list (bottom right), all
-	 * drawn straight on the map and scaled with the UI scale setting.
-	 */
+	/** Seed label (bottom left) and the key list inside its plate (bottom right). */
 	private void drawHud(GuiGraphicsExtractor graphics) {
-		double scale = IconButton.factor();
-		var corner = graphics.pose();
-		corner.pushMatrix();
-		corner.translate(getX() + 8, getBottom() - 6);
-		corner.scale((float) scale, (float) scale);
-		int lineY = -9;
 		if (session.seed() != null) {
 			String seedLine = Component.translatable("kiroxmap.seed").getString() + ": " + session.seed();
-			outlinedText(graphics, Component.literal(seedLine), 0, lineY, 0xFFB0B0B0);
-			lineY -= HELP_LINE;
+			graphics.text(font, seedLine, getX() + 8, getBottom() - 6 - 9, 0xFFB0B0B0);
 		}
-		String name = Component.translatable("kiroxmap.title").getString() + " v" + KiroxMap.version();
-		outlinedText(graphics, Component.literal(name), 0, lineY, 0xFFFFD84A);
-		corner.popMatrix();
 		if (helpTop >= 0) {
 			int widest = 0;
 			for (String key : HELP_KEYS) {
 				widest = Math.max(widest, font.width(Component.translatable(key)));
 			}
-			// No box behind the help: the text sits straight on the map, outlined so it stays readable
-			// on any biome color, and follows the UI scale like the rest of the interface.
-			double f = IconButton.factor();
-			int boxLeft = getRight() - 6 - (int) Math.round((widest + 14) * f);
-			var pose = graphics.pose();
-			pose.pushMatrix();
-			pose.translate(boxLeft, helpTop);
-			pose.scale((float) f, (float) f);
+			int x = getRight() - 6 - (widest + 14) + 7;
 			for (int i = 0; i < HELP_KEYS.length; i++) {
-				outlinedText(graphics, Component.translatable(HELP_KEYS[i]), 7, 5 + i * HELP_LINE, 0xFFE8E8E8);
+				graphics.text(font, Component.translatable(HELP_KEYS[i]), x, helpTop + 5 + i * HELP_LINE, 0xFFD0D0D0);
 			}
-			pose.popMatrix();
 		}
-	}
-
-	/** Text with a 1px black outline (drawn four times offset, then once on top). */
-	private void outlinedText(GuiGraphicsExtractor graphics, Component text, int x, int y, int color) {
-		graphics.text(font, text, x - 1, y, 0xFF000000);
-		graphics.text(font, text, x + 1, y, 0xFF000000);
-		graphics.text(font, text, x, y - 1, 0xFF000000);
-		graphics.text(font, text, x, y + 1, 0xFF000000);
-		graphics.text(font, text, x, y, color);
-	}
-
-	private static double[] zooms(double[] blocksPerPixel) {
-		double[] out = new double[blocksPerPixel.length];
-		for (int i = 0; i < out.length; i++) {
-			out[i] = Math.log(blocksPerPixel[i]) / Math.log(2);
-		}
-		return out;
 	}
 
 	/**
-	 * Size of structure icons, waypoint pins and their labels: full size at the base zoom (and when
-	 * zoomed in), shrinking as the map is zoomed out. The curve is piecewise linear through
-	 * {@link #SCALE_BPP} / {@link #SCALE_VALUE} (blocks/pixel -> size factor), so it drops quickly
-	 * from about 6 blocks/pixel onwards, where markers used to look too big.
+	 * Size of structure icons and waypoint pins: full size at the base zoom (and when zoomed in),
+	 * shrinking linearly as the map is zoomed out, down to 25% at the farthest zoom.
 	 */
 	private double markerScale() {
-		double zoom = session.view.zoom();
-		if (zoom <= SCALE_ZOOM[0]) {
-			return SCALE_VALUE[0];
-		}
-		for (int i = 1; i < SCALE_ZOOM.length; i++) {
-			if (zoom <= SCALE_ZOOM[i]) {
-				double t = (zoom - SCALE_ZOOM[i - 1]) / (SCALE_ZOOM[i] - SCALE_ZOOM[i - 1]);
-				return SCALE_VALUE[i - 1] + (SCALE_VALUE[i] - SCALE_VALUE[i - 1]) * t;
-			}
-		}
-		return SCALE_VALUE[SCALE_VALUE.length - 1];
-	}
-
-	/** Label text is scaled like the markers but never below this, so it stays readable. */
-	private double labelScale() {
-		return Math.max(MIN_LABEL_SCALE, markerScale());
-	}
-
-	/** A centered label on a dark pill, scaled by {@code scale}; {@code (centerX, topY)} is its top-center on screen. */
-	private void drawLabel(GuiGraphicsExtractor graphics, String text, int centerX, int topY, double scale) {
-		int w = font.width(text);
-		var pose = graphics.pose();
-		pose.pushMatrix();
-		pose.translate(centerX, topY);
-		pose.scale((float) scale, (float) scale);
-		graphics.fill(-w / 2 - 2, 0, w / 2 + 3, TEXT_H + 2, 0xA0000000);
-		graphics.text(font, text, -w / 2, 2, 0xFFFFFFFF);
-		pose.popMatrix();
+		double t = Math.clamp((session.view.zoom() - MapView.DEFAULT_ZOOM) / (MapView.MAX_ZOOM - MapView.DEFAULT_ZOOM), 0.0, 1.0);
+		return 1.0 - (1.0 - MIN_MARKER_SCALE) * t;
 	}
 
 	/** Message in the middle of the empty map: loading, failed, or waiting for a seed. */
@@ -367,21 +294,13 @@ final class MapCanvas extends AbstractWidget {
 		}
 	}
 
-	/**
-	 * Draws the enabled structure markers. Which markers are shown must not flicker while panning or
-	 * zooming, so the decision is made in world coordinates (a pan never changes the distance between
-	 * two structures) with a fixed priority order: the most important kinds claim their spot first, and
-	 * markers closer than a fraction of an icon to an accepted one are skipped. Accepted markers are then
-	 * drawn from least to most important, so important ones always sit on top (a z-order). Returns what was drawn,
-	 * topmost last.
-	 */
+	/** Draws the enabled structure markers, at most one per icon-sized cell. Returns what was drawn. */
 	private List<StructureIndex.Found> drawStructures(GuiGraphicsExtractor graphics) {
 		List<StructureIndex.Found> shown = new ArrayList<>();
 		StructureLayer layer = session.structures();
 		if (layer == null) {
 			return shown;
 		}
-		double bpp = session.view.blocksPerPixel();
 		Set<StructureKind> enabled = EnumSet.noneOf(StructureKind.class);
 		for (StructureKind kind : StructureKind.in(session.dim)) {
 			if (config.isEnabled(kind)) {
@@ -394,36 +313,27 @@ final class MapCanvas extends AbstractWidget {
 		int margin = 2 * ICON;
 		layer.update(enabled, worldX(getX() - margin), worldZ(getY() - margin), worldX(getRight() + margin), worldZ(getBottom() + margin));
 
-		// The layer's last result can still hold kinds that the current zoom hides (or that were switched
-		// off); only the kinds the layer would search for this view are drawn, so nothing lingers or pops.
-		double viewW = (width + 2.0 * margin) * bpp, viewH = (height + 2.0 * margin) * bpp;
-		Set<StructureKind> visible = EnumSet.noneOf(StructureKind.class);
-		for (StructureKind kind : enabled) {
-			if (kind == StructureKind.END_GATEWAY || layer.visibleFor(kind, viewW, viewH)) {
-				visible.add(kind);
-			}
-		}
-
-		// Fixed order, independent of how the layer lists things (that changes while panning): importance, then kind, then position.
+		// Which icon wins when several overlap must not depend on the order the layer lists them in
+		// (that changes while panning and caused icons to swap): rare ones first, then a fixed order.
 		List<StructureIndex.Found> candidates = new ArrayList<>(layer.found());
-		candidates.removeIf(f -> !visible.contains(f.kind()));
-		candidates.sort(Comparator.comparingInt((StructureIndex.Found f) -> rank(f.kind()))
+		candidates.sort(Comparator.comparingInt((StructureIndex.Found f) -> priority(f.kind()))
 				.thenComparingInt(f -> f.kind().ordinal()).thenComparingInt(StructureIndex.Found::x).thenComparingInt(StructureIndex.Found::z));
 
-		// Accepted markers, bucketed (in blocks) so the overlap test only looks at the neighbouring buckets.
-		double minGap = cell * COLLISION * bpp; // blocks
-		int bucket = (int) Math.max(1, Math.ceil(minGap));
+		// Accepted icons, bucketed so the overlap test only looks at the neighbouring buckets.
 		Map<Long, List<int[]>> placed = new HashMap<>();
-		List<StructureIndex.Found> accepted = new ArrayList<>();
 		for (StructureIndex.Found found : candidates) {
-			int bx = Math.floorDiv(found.x(), bucket), bz = Math.floorDiv(found.z(), bucket);
+			if (!enabled.contains(found.kind())) {
+				continue;
+			}
+			int x = guiX(found.x()), y = guiY(found.z());
+			int bx = Math.floorDiv(x, cell), by = Math.floorDiv(y, cell);
 			boolean blocked = false;
 			for (int ox = -1; ox <= 1 && !blocked; ox++) {
-				for (int oz = -1; oz <= 1 && !blocked; oz++) {
-					List<int[]> list = placed.get(bucketKey(bx + ox, bz + oz));
-					if (list != null) {
-						for (int[] other : list) {
-							if (Math.abs(other[0] - found.x()) < minGap && Math.abs(other[1] - found.z()) < minGap) {
+				for (int oy = -1; oy <= 1 && !blocked; oy++) {
+					List<int[]> bucket = placed.get(bucketKey(bx + ox, by + oy));
+					if (bucket != null) {
+						for (int[] other : bucket) {
+							if (Math.abs(other[0] - x) < cell && Math.abs(other[1] - y) < cell) {
 								blocked = true;
 								break;
 							}
@@ -434,18 +344,10 @@ final class MapCanvas extends AbstractWidget {
 			if (blocked) {
 				continue;
 			}
-			placed.computeIfAbsent(bucketKey(bx, bz), k -> new ArrayList<>(2)).add(new int[] {found.x(), found.z()});
-			int x = guiX(found.x()), y = guiY(found.z());
+			placed.computeIfAbsent(bucketKey(bx, by), k -> new ArrayList<>(2)).add(new int[] {x, y});
 			if (x < getX() - ICON || x > getRight() + ICON || y < getY() - ICON || y > getBottom() + ICON) {
 				continue; // off screen: it still claimed its spot above, it just is not drawn
 			}
-			accepted.add(found);
-		}
-
-		// Least important first, so the most important end up on top.
-		for (int i = accepted.size() - 1; i >= 0; i--) {
-			StructureIndex.Found found = accepted.get(i);
-			int x = guiX(found.x()), y = guiY(found.z());
 			shown.add(found);
 			if (scale >= 0.999) {
 				graphics.fakeItem(Icons.of(found.kind()), x - ICON / 2, y - ICON / 2);
@@ -458,8 +360,11 @@ final class MapCanvas extends AbstractWidget {
 				pose.popMatrix();
 			}
 			if (config.showLabels) {
-				String name = Component.translatable("kiroxmap.structure." + found.kind().key()).getString();
-				drawLabel(graphics, name, x, y + cell / 2, labelScale());
+				Component name = Component.translatable("kiroxmap.structure." + found.kind().key());
+				int w = font.width(name);
+				int ly = y + cell / 2;
+				graphics.fill(x - w / 2 - 2, ly, x + w / 2 + 2, ly + 10, 0xA0000000);
+				graphics.centeredText(font, name, x, ly + 1, 0xFFFFFFFF);
 			}
 		}
 		return shown;
@@ -469,13 +374,8 @@ final class MapCanvas extends AbstractWidget {
 		return ((long) bx << 32) | (by & 0xFFFFFFFFL);
 	}
 
-	/** Importance of a kind when markers compete for space: 0 wins. Rare or landmark structures first. */
-	private static int rank(StructureKind kind) {
-		return switch (kind) {
-			case STRONGHOLD, END_CITY_SHIP, WOODLAND_MANSION, OCEAN_MONUMENT, ANCIENT_CITY, TRIAL_CHAMBERS -> 0;
-			case VILLAGE, NETHER_FORTRESS, BASTION_REMNANT, END_CITY, PILLAGER_OUTPOST, END_GATEWAY -> 1;
-			default -> 2;
-		};
+	private static int priority(StructureKind kind) {
+		return kind == StructureKind.STRONGHOLD || kind == StructureKind.END_CITY_SHIP ? 0 : 1;
 	}
 
 	private StructureIndex.Found nearest(List<StructureIndex.Found> shown, int mouseX, int mouseY) {
@@ -536,7 +436,11 @@ final class MapCanvas extends AbstractWidget {
 			int x = guiX(w.x + 0.5), y = guiY(w.z + 0.5);
 			drawPin(graphics, x, y, w.color, false, scale);
 			if (config.showWaypointLabels) {
-				drawLabel(graphics, waypointName(w), x, y + r + 3, labelScale());
+				String name = waypointName(w);
+				int tw = font.width(name);
+				int ly = y + r + 3;
+				graphics.fill(x - tw / 2 - 2, ly, x + tw / 2 + 3, ly + TEXT_H + 2, 0xA0000000);
+				graphics.text(font, name, x - tw / 2, ly + 2, 0xFFFFFFFF);
 			}
 		}
 		if (hovered == null) {
@@ -653,7 +557,6 @@ final class MapCanvas extends AbstractWidget {
 		if (m == null || mouseX < m.x() || mouseX >= m.x() + m.width() || mouseY < m.y() + 2 || mouseY >= m.y() + 2 + m.items().size() * Menu.ROW) {
 			return false;
 		}
-		playDownSound(Minecraft.getInstance().getSoundManager());
 		m.items().get((int) (mouseY - m.y() - 2) / Menu.ROW).action().run();
 		return true;
 	}

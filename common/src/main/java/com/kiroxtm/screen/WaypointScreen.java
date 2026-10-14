@@ -4,7 +4,6 @@ import java.util.List;
 
 import com.kiroxtm.config.AtlasConfig;
 import com.kiroxtm.config.Waypoint;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
@@ -153,7 +152,6 @@ final class WaypointScreen extends Screen {
 			double within = (event.x() - getX()) - i * (SIZE + 10);
 			if (i >= 0 && i < Waypoint.COLORS.length && within <= SIZE) {
 				color = Waypoint.COLORS[i];
-				playDownSound(Minecraft.getInstance().getSoundManager());
 			}
 			return true;
 		}

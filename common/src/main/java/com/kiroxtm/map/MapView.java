@@ -2,14 +2,12 @@ package com.kiroxtm.map;
 
 /**
  * Where the map looks: a center in block coordinates and a zoom. The zoom is an exponent, so the
- * scale is {@code 2^zoom} blocks per GUI pixel, from 1/4 (four pixels per block) to {@link #MAX_BLOCKS_PER_PIXEL}.
+ * scale is {@code 2^zoom} blocks per GUI pixel, from 1/4 (four pixels per block) to 512.
  * Pure arithmetic with no Minecraft types, so it is unit-tested.
  */
 public final class MapView {
 	public static final double MIN_ZOOM = -2;
-	/** Farthest zoom-out: 8 blocks per GUI pixel (the number shown in the top bar). */
-	public static final double MAX_BLOCKS_PER_PIXEL = 8;
-	public static final double MAX_ZOOM = Math.log(MAX_BLOCKS_PER_PIXEL) / Math.log(2);
+	public static final double MAX_ZOOM = 9;
 	public static final double DEFAULT_ZOOM = 2;
 	/** One wheel notch. */
 	public static final double ZOOM_STEP = 0.5;

@@ -6,11 +6,7 @@ import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
-
-import com.kiroxtm.map.DiskCache;
 
 import dev.xpple.cubiomes.Cubiomes;
 import dev.xpple.cubiomes.Pos;
@@ -37,27 +33,10 @@ public final class StructureIndex {
 	private final Map<StructureKind, Integer> regionBlocks = new EnumMap<>(StructureKind.class);
 	private volatile int[] strongholds;
 
-	/** Optional on-disk copy of the region results; null when the disk cache is off. */
-	private final DiskCache.Store store;
-	private static final long FLUSH_INTERVAL_MS = 10_000;
-	/** Kinds whose saved file has been read into memory. */
-	private final Set<StructureKind> loaded = ConcurrentHashMap.newKeySet();
-	/** Kinds whose in-memory map was emptied for size: their file is left as it is, not overwritten. */
-	private final Set<StructureKind> frozen = ConcurrentHashMap.newKeySet();
-	/** Per kind: regions computed since the file was last written. */
-	private final Map<StructureKind, AtomicInteger> unsaved = new EnumMap<>(StructureKind.class);
-	private final Map<StructureKind, Long> lastFlush = new EnumMap<>(StructureKind.class);
-
 	public StructureIndex(SeedWorld world) {
-		this(world, null);
-	}
-
-	public StructureIndex(SeedWorld world, DiskCache.Store store) {
 		this.world = world;
-		this.store = store;
 		for (StructureKind kind : StructureKind.values()) {
 			regions.put(kind, new ConcurrentHashMap<>());
-			unsaved.put(kind, new AtomicInteger());
 			regionBlocks.put(kind, loadRegionBlocks(kind));
 		}
 	}
@@ -94,12 +73,7 @@ public final class StructureIndex {
 
 		long size = regionBlocks.get(kind);
 		Map<Long, int[]> cache = regions.get(kind);
-		if (store != null && loaded.add(kind)) {
-			cache.putAll(store.loadRegions(kind, NONE)); // results of earlier sessions
-		}
 		if (cache.size() > MAX_CACHED_REGIONS) {
-			flush(kind);
-			frozen.add(kind); // keep the saved file as it is instead of overwriting it with a smaller set
 			cache.clear();
 		}
 		// A structure always lands inside its own region, so scanning the regions that cover the
@@ -109,36 +83,13 @@ public final class StructureIndex {
 		for (long rz = rz0; rz <= rz1; rz++) {
 			for (long rx = rx0; rx <= rx1; rx++) {
 				int regionX = (int) rx, regionZ = (int) rz;
-				int[] pos = cache.computeIfAbsent((rx << 32) | (rz & 0xFFFFFFFFL), k -> {
-					unsaved.get(kind).incrementAndGet();
-					return locate(kind, regionX, regionZ);
-				});
+				int[] pos = cache.computeIfAbsent((rx << 32) | (rz & 0xFFFFFFFFL), k -> locate(kind, regionX, regionZ));
 				if (pos.length == 2 && pos[0] >= x0 && pos[0] < x1 && pos[1] >= z0 && pos[1] < z1) {
 					out.add(new Found(kind, pos[0], pos[1]));
 				}
 			}
 		}
-		if (store != null && unsaved.get(kind).get() > 0
-				&& System.currentTimeMillis() - lastFlush.getOrDefault(kind, 0L) > FLUSH_INTERVAL_MS) {
-			flush(kind); // not on every search: new regions arrive constantly while panning
-		}
 		return out;
-	}
-
-	/** Writes the region results of one kind to disk if there is anything new. */
-	private synchronized void flush(StructureKind kind) {
-		if (store == null || frozen.contains(kind) || unsaved.get(kind).getAndSet(0) == 0) {
-			return;
-		}
-		lastFlush.put(kind, System.currentTimeMillis());
-		store.saveRegions(kind, regions.get(kind));
-	}
-
-	/** Writes everything new to disk (called when the map is closed or the world changes). */
-	public void flush() {
-		for (StructureKind kind : StructureKind.values()) {
-			flush(kind);
-		}
 	}
 
 	/**
@@ -168,15 +119,7 @@ public final class StructureIndex {
 	public int[] strongholds() {
 		int[] result = strongholds;
 		if (result == null) {
-			if (store != null) {
-				result = store.loadStrongholds(STRONGHOLD_COUNT * 2);
-			}
-			if (result == null) {
-				result = world.strongholds(STRONGHOLD_COUNT);
-				if (store != null && result.length > 0) {
-					store.saveStrongholds(result);
-				}
-			}
+			result = world.strongholds(STRONGHOLD_COUNT);
 			strongholds = result;
 		}
 		return result;
