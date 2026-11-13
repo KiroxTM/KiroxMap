@@ -11,7 +11,7 @@
   <img src="https://img.shields.io/badge/license-CC0--1.0-lightgrey?style=flat-square" alt="CC0-1.0">
 </p>
 
-**KiroxMap 1.0.1-Beta** is a full-screen world map for Minecraft that works **only from the world seed.** **Press M** and see the biomes and structures of the whole world, including places you have never visited. It never loads chunks and never reads the blocks around you.
+**KiroxMap 1.0.4-Beta** is a full-screen world map for Minecraft that works **only from the world seed.** **Press M** and see the biomes and structures of the whole world, including places you have never visited. It never loads chunks and never reads the blocks around you.
 
 > **Client-side only.** Fabric and NeoForge, Minecraft 26.3.
 
@@ -57,7 +57,7 @@ Switch dimensions from the toolbar and explore each one:
 
 - **Your way:** turn each structure type on or off from the side panel, each with its own icon on the map.
 - **Focus:** hide the biomes you do not care about and the rest stand out.
-- **Optional layers:** chunk grid, slime chunks, structure labels, waypoint labels and terrain relief.
+- **Optional layers:** chunk grid, slime chunks, structure labels, waypoint labels, waypoint tags in the world and terrain relief.
 - **Terrain relief:** hills, mountains and coasts are shaded on top of the biome colors, in the Overworld and (zoomed in) in the End. It is an approximation computed from the seed, not the exact blocks, and the Nether has none. Turn it off with its toolbar button.
 - **Details on hover:** hover over anything for its name and coordinates. Right-click to copy coordinates.
 - **Fast:** smooth zoom and panning. Tiles are generated in the background and cached on disk, so a world you have already viewed opens instantly.
@@ -79,6 +79,8 @@ Switch dimensions from the toolbar and explore each one:
 Right-click the map to add a waypoint: pick a name, a color and the exact coordinates. Pins are always visible and the **name only appears when you hover over one**, so the map stays clean.
 
 Edit or delete them at any time, and show or hide them from the waypoints list. They are saved per world and per dimension.
+
+**Tags in the world:** every visible waypoint also shows a small name tag with its distance over the game view. It is small and half transparent while you look elsewhere, and grows and becomes fully opaque when you look straight at it. Switch it off with the tag button in the top bar of the map or in the mod's config screen.
 
 <p align="center">
   <img src="public/covers/6.png" alt="Waypoints list" width="100%">
@@ -103,7 +105,7 @@ The map always shows what the seed generates, not what you have explored. Everyt
 2. Drop the mod `.jar` into your `mods` folder.
 3. Press **M** in game (changeable in *Controls*).
 
-Requires **Java 25**. No server-side install needed...
+Requires **Java 25**. No server-side install needed.
 
 ## Building from source
 

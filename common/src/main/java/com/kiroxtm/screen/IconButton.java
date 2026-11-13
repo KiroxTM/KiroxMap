@@ -6,6 +6,7 @@ import java.util.function.Supplier;
 import com.mojang.blaze3d.platform.InputConstants;
 
 import com.kiroxtm.config.AtlasConfig;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractWidget;
@@ -113,6 +114,7 @@ final class IconButton extends AbstractWidget {
 	@Override
 	public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
 		if (active && event.button() == InputConstants.MOUSE_BUTTON_LEFT && isMouseOver(event.x(), event.y())) {
+			playDownSound(Minecraft.getInstance().getSoundManager()); // the vanilla button click
 			action.run();
 			return true;
 		}

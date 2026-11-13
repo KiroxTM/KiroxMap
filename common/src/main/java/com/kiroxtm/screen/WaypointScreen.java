@@ -4,6 +4,7 @@ import java.util.List;
 
 import com.kiroxtm.config.AtlasConfig;
 import com.kiroxtm.config.Waypoint;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
@@ -23,6 +24,7 @@ final class WaypointScreen extends Screen {
 	private final boolean isNew;
 	private EditBox nameBox;
 	private EditBox xBox;
+	private EditBox yBox;
 	private EditBox zBox;
 	private int color;
 
@@ -48,10 +50,15 @@ final class WaypointScreen extends Screen {
 		}
 
 		int half = (W - 8) / 2;
-		xBox = addRenderableWidget(new EditBox(font, left, top + 60, half, 20, xBox, Component.literal("X")));
-		zBox = addRenderableWidget(new EditBox(font, left + half + 8, top + 60, half, 20, zBox, Component.literal("Z")));
-		for (EditBox box : new EditBox[] {xBox, zBox}) {
+		int colW = (W - 16) / 3;
+		xBox = addRenderableWidget(new EditBox(font, left, top + 60, colW, 20, xBox, Component.literal("X")));
+		yBox = addRenderableWidget(new EditBox(font, left + colW + 8, top + 60, colW, 20, yBox, Component.literal("Y")));
+		zBox = addRenderableWidget(new EditBox(font, left + 2 * (colW + 8), top + 60, colW, 20, zBox, Component.literal("Z")));
+		for (EditBox box : new EditBox[] {xBox, yBox, zBox}) {
 			box.setMaxLength(9);
+		}
+		if (yBox.getValue().isEmpty()) {
+			yBox.setValue(Integer.toString(waypoint.y));
 		}
 		if (xBox.getValue().isEmpty()) {
 			xBox.setValue(Integer.toString(waypoint.x));
@@ -81,6 +88,7 @@ final class WaypointScreen extends Screen {
 			waypoint.name = Component.translatable("kiroxmap.waypoint.default_name").getString();
 		}
 		waypoint.x = parse(xBox.getValue(), waypoint.x);
+		waypoint.y = parse(yBox.getValue(), waypoint.y);
 		waypoint.z = parse(zBox.getValue(), waypoint.z);
 		waypoint.color = color;
 		if (isNew) {
@@ -121,7 +129,9 @@ final class WaypointScreen extends Screen {
 		graphics.centeredText(font, title, width / 2, top - 12, 0xFFFFFFFF);
 		graphics.text(font, Component.translatable("kiroxmap.waypoint.name"), left, top + 11, 0xFFB0B0B0);
 		graphics.text(font, "X", left, top + 49, 0xFFB0B0B0);
-		graphics.text(font, "Z", left + (W - 8) / 2 + 8, top + 49, 0xFFB0B0B0);
+		int third = (W - 16) / 3;
+		graphics.text(font, "Y", left + third + 8, top + 49, 0xFFB0B0B0);
+		graphics.text(font, "Z", left + 2 * (third + 8), top + 49, 0xFFB0B0B0);
 		graphics.text(font, Component.translatable("kiroxmap.waypoint.color"), left, top + 87, 0xFFB0B0B0);
 	}
 
@@ -152,6 +162,7 @@ final class WaypointScreen extends Screen {
 			double within = (event.x() - getX()) - i * (SIZE + 10);
 			if (i >= 0 && i < Waypoint.COLORS.length && within <= SIZE) {
 				color = Waypoint.COLORS[i];
+				playDownSound(Minecraft.getInstance().getSoundManager());
 			}
 			return true;
 		}

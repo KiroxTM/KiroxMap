@@ -3,6 +3,7 @@ package com.kiroxtm.neoforge;
 import com.kiroxtm.KiroxMap;
 import com.kiroxtm.client.KiroxClient;
 import com.kiroxtm.client.KiroxKeys;
+import com.kiroxtm.client.WaypointTags;
 import com.kiroxtm.screen.KiroxConfigScreen;
 
 import net.minecraft.client.Minecraft;
@@ -13,7 +14,9 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.gui.IConfigScreenFactory;
+import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
+import net.neoforged.neoforge.client.gui.VanillaGuiLayers;
 
 /**
  * NeoForge client entry point: registers the key and forwards ticks to the shared client logic. The
@@ -31,6 +34,13 @@ public class KiroxMapNeoForgeClient {
 	static void registerKeys(RegisterKeyMappingsEvent event) {
 		event.registerCategory(KiroxKeys.CATEGORY);
 		event.register(KiroxKeys.OPEN_MAP);
+	}
+
+	/** Waypoint name tags over the game view. */
+	@SubscribeEvent
+	static void registerGuiLayers(RegisterGuiLayersEvent event) {
+		event.registerAbove(VanillaGuiLayers.CROSSHAIR, KiroxMap.id("waypoint_tags"),
+				(graphics, deltaTracker) -> WaypointTags.render(graphics, deltaTracker.getGameTimeDeltaPartialTick(true)));
 	}
 
 	@SubscribeEvent

@@ -6,6 +6,7 @@ import java.util.concurrent.Executors;
 import java.util.function.IntUnaryOperator;
 
 import com.kiroxtm.config.AtlasConfig;
+import com.kiroxtm.map.DiskCache;
 import com.kiroxtm.map.MapView;
 import com.kiroxtm.map.StructureLayer;
 import com.kiroxtm.map.TileCache;
@@ -45,6 +46,8 @@ final class AtlasSession {
 	private Long seed;
 	private TileCache tiles;
 	private StructureLayer structures;
+	/** Saved copy of the current world's tiles and structures; null when the disk cache is off. */
+	private DiskCache.Store store;
 
 	/** Whether the native library and biome data are ready, i.e. a world can be shown without blocking. */
 	static boolean isWarm() {
@@ -101,8 +104,32 @@ final class AtlasSession {
 		clear();
 		seed = newSeed;
 		SeedWorld world = new SeedWorld(newSeed, newDim);
-		tiles = new TileCache(world, palette());
-		structures = new StructureLayer(new StructureIndex(world));
+		store = DiskCache.open(newSeed, newDim, AtlasConfig.get().diskCache);
+		tiles = new TileCache(world, palette(), store);
+		tiles.setRelief(AtlasConfig.get().showRelief);
+		structures = new StructureLayer(new StructureIndex(world, store));
+	}
+
+	/** Saves pending structure results to the disk cache (call when the map is closed). */
+	void flush() {
+		if (structures != null) {
+			structures.flush();
+		}
+	}
+
+	/** Deletes the saved data of the current seed and computes the map again from scratch. */
+	void regenerate() {
+		Long current = seed;
+		if (current == null) {
+			return;
+		}
+		Dim currentDim = dim;
+		if (store != null) {
+			store.invalidate(); // work still in flight can no longer write into the deleted folder
+		}
+		clear();
+		DiskCache.clearSeed(current);
+		show(current, currentDim);
 	}
 
 	Long seed() {
@@ -124,6 +151,13 @@ final class AtlasSession {
 		}
 	}
 
+	/** Applies the relief switch to all tiles. */
+	void applyRelief() {
+		if (tiles != null) {
+			tiles.setRelief(AtlasConfig.get().showRelief);
+		}
+	}
+
 	private static IntUnaryOperator palette() {
 		Set<Integer> hidden = Set.copyOf(AtlasConfig.get().hiddenBiomes);
 		if (hidden.isEmpty()) {
@@ -133,11 +167,13 @@ final class AtlasSession {
 	}
 
 	private void clear() {
+		flush();
 		if (tiles != null) {
 			tiles.close();
 		}
 		tiles = null;
 		structures = null;
+		store = null;
 		seed = null;
 	}
 }

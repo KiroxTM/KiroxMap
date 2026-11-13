@@ -1,7 +1,7 @@
 # KiroxMap: contexto del proyecto y del core (cubiomes)
 
 Documento para pegar en otros chats o prompts cuando haga falta contexto: versiones, cómo funciona el core,
-qué funciones se usan y cómo actualizarlo. Estado de referencia: **KiroxMap 1.0.1 + relieve del terreno**, 2026-10-14.
+qué funciones se usan y cómo actualizarlo. Estado de referencia: **KiroxMap 1.0.4 (relieve del terreno + tags de waypoint en el mundo)**, 2026-11-13.
 Todo lo de este estado compiló y funcionó en el equipo del autor (Windows, PowerShell, `./gradlew build`).
 
 ---
@@ -26,7 +26,7 @@ Todo lo de este estado compiló y funcionó en el equipo del autor (Windows, Pow
 | NeoForge | 26.3.0.43-beta (mínimo 26.3.0.0-beta) |
 | NeoForm | 26.3-1 |
 | **cubiomes (bindings)** | `0.0.0-2026.9.22.1790089484+18edd56575a60fe7129705bf972de0a511437527` |
-| Versión del mod | 1.0.1 |
+| Versión del mod | 1.0.4 |
 
 `mod_id=kirox_map` (idéntico en `fabric.mod.json`, `neoforge.mods.toml` y `KiroxMap.MOD_ID`; NeoForge no admite `-`).
 Si se añade un campo a `gradle.properties` que usen los recursos, hay que añadirlo también a `expandProps` en
@@ -152,6 +152,18 @@ alejar desde el zoom base. Hay una comprobación de capas (`checkLayering`) que 
 `showGrid`, `showSlimeChunks`, `showLabels`, `showWaypointLabels`, `showRelief` (por defecto `true`), `diskCache`,
 `uiScale` (1, 2 o 3; 3 = tamaño original), `panelOpen`, `showHelp` (por defecto `false`), `panelTab`, más estructuras y biomas
 activos y waypoints.
+
+### Tags de waypoint en el mundo (1.0.4, `client/WaypointTags.java`)
+
+- Overlay 2D en el HUD (no geometría 3D): proyecta cada waypoint visible (mismo mundo y dimensión) a pantalla con la posición/ángulos
+  del jugador y el FOV de las opciones; rectángulo oscuro con el nombre y debajo la distancia.
+- Sin mirarlo: escala `BASE_SCALE` y opacidad 40 %. Con la mira sobre el tag: `FOCUS_SCALE` y 90 %, con transición suave (`EASE_SPEED`).
+- Distancia en bloques ("B"), solo visible con el tag enfocado (sin mirarlo: solo el nombre); se oculta a 20 bloques o menos; nombre cortado a 11 caracteres + "....".
+- Cada waypoint guarda su Y (`Waypoint.y`; los antiguos sin Y reciben `Waypoint.DEFAULT_Y` = 65); el tag flota 1,5 bloques sobre ella y la distancia es 3D.
+- Waypoints en el save del mundo (singleplayer): `config/WorldWaypoints.java` guarda/lee `<mundo>/kirox-map/waypoints.json`. Al abrir un mundo, si el archivo existe manda
+  sobre la lista de `config/kirox-map.json`; si no existe se crea copiando la lista actual. Cada `AtlasConfig.save()` lo reescribe. Multijugador solo usa el config.
+- Enganche por loader: Fabric `HudElementRegistry.attachElementAfter(MISC_OVERLAYS, ...)`, NeoForge `RegisterGuiLayersEvent.registerAbove(CROSSHAIR, ...)`.
+- Se activa/desactiva con `showWaypointTags` (por defecto `true`): botón `WAYPOINT_TAGS` en la barra superior del mapa y toggle en la pantalla de config.
 
 ### Iconos de la interfaz
 

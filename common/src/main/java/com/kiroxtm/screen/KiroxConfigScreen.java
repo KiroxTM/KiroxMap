@@ -34,6 +34,7 @@ public final class KiroxConfigScreen extends Screen {
 		toggle(left, top + 24, "kiroxmap.labels", () -> config.showLabels, () -> config.showLabels = !config.showLabels);
 		toggle(left + COL + GAP, top + 24, "kiroxmap.help", () -> config.showHelp, () -> config.showHelp = !config.showHelp);
 		toggle(left, top + 48, "kiroxmap.config.panel", () -> config.panelOpen, () -> config.panelOpen = !config.panelOpen);
+		toggle(left + COL + GAP, top + 48, "kiroxmap.waypoint_tags", () -> config.showWaypointTags, () -> config.showWaypointTags = !config.showWaypointTags);
 		addRenderableWidget(Button.builder(Component.translatable("gui.done"), b -> onClose())
 				.bounds(width / 2 - 75, top + 84, 150, 20).build());
 	}

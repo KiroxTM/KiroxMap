@@ -3,7 +3,6 @@ package com.kiroxtm.map;
 import com.kiroxtm.KiroxMap;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -36,6 +35,11 @@ public final class StructureLayer {
 
 	public StructureLayer(StructureIndex index) {
 		this.index = index;
+	}
+
+	/** Saves new results to the disk cache (on the search thread, so the caller never waits). */
+	public void flush() {
+		SEARCH.execute(index::flush);
 	}
 
 	/** Structures found so far; may lag one search behind the view. */
@@ -99,7 +103,9 @@ public final class StructureLayer {
 
 	private record Query(List<StructureKind> kinds, boolean gateways, int x0, int z0, int x1, int z1) {
 		boolean contains(List<StructureKind> otherKinds, boolean otherGateways, double left, double top, double right, double bottom) {
-			return Objects.equals(kinds, otherKinds) && gateways == otherGateways && left >= x0 && top >= z0 && right <= x1 && bottom <= z1;
+			// A search for more kinds also answers a view that needs fewer (zooming out hides kinds), so
+			// nothing is searched again, and nothing disappears and reappears while the wheel turns.
+			return kinds.containsAll(otherKinds) && gateways == otherGateways && left >= x0 && top >= z0 && right <= x1 && bottom <= z1;
 		}
 	}
 }

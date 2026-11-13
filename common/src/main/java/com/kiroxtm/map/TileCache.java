@@ -30,6 +30,9 @@ import net.minecraft.client.renderer.texture.DynamicTexture;
  *   <li>the render thread only uploads finished images as textures and draws quads.</li>
  * </ul>
  *
+ * With relief on, each texel is also darkened or lightened by a hillshade of the approximate terrain
+ * height ({@link Relief}); the shade is computed once per tile and cached next to the biome ids.
+ *
  * A tile is {@value TileKey#TEXELS}x{@value TileKey#TEXELS} texels at one of four levels of detail
  * (4, 16, 64 or 256 blocks per texel). Only tiles in view are ever requested. A tile that is not
  * ready yet is drawn from its nearest ready coarser ancestor, and the coarsest level is always
@@ -54,11 +57,21 @@ public final class TileCache implements AutoCloseable {
 	private volatile IntUnaryOperator palette;
 	private volatile int paletteVersion;
 	private volatile boolean closed;
+	/** Whether terrain relief is drawn on top of the biome colors. */
+	private volatile boolean relief = true;
 	private long frame;
 
+	/** Optional on-disk copy of computed tiles; null when the disk cache is off. */
+	private final DiskCache.Store store;
+
 	public TileCache(SeedWorld world, IntUnaryOperator palette) {
+		this(world, palette, null);
+	}
+
+	public TileCache(SeedWorld world, IntUnaryOperator palette, DiskCache.Store store) {
 		this.world = world;
 		this.palette = palette;
+		this.store = store;
 	}
 
 	public SeedWorld world() {
@@ -69,6 +82,14 @@ public final class TileCache implements AutoCloseable {
 	public void setPalette(IntUnaryOperator palette) {
 		this.palette = palette;
 		paletteVersion++;
+	}
+
+	/** Turns the terrain relief on or off; cached tiles are repainted in the background. */
+	public void setRelief(boolean on) {
+		if (relief != on) {
+			relief = on;
+			paletteVersion++;
+		}
 	}
 
 	/** Render thread only. Draws the view into the GUI rectangle and schedules missing tiles. */
@@ -193,11 +214,12 @@ public final class TileCache implements AutoCloseable {
 			return;
 		}
 		int[] ids = tile != null ? tile.ids : null;
-		WORKERS.execute(new Job(this, key, ids, priority));
+		byte[] shade = tile != null ? tile.shade : null;
+		WORKERS.execute(new Job(this, key, ids, shade, priority));
 	}
 
 	/** Runs on a worker thread. */
-	private void generate(TileKey key, int[] knownIds) {
+	private void generate(TileKey key, int[] knownIds, byte[] knownShade) {
 		try {
 			if (closed || !wanted.contains(key)) {
 				pending.remove(key); // scrolled out of view before its turn; it is requested again if needed
@@ -206,22 +228,59 @@ public final class TileCache implements AutoCloseable {
 			int version = paletteVersion;
 			IntUnaryOperator colors = palette;
 			int[] ids = knownIds;
+			if (ids == null && store != null) {
+				ids = store.loadTile(key); // computed in an earlier session
+			}
 			if (ids == null) {
 				ids = world.biomes(key.scale(), key.tx() * TileKey.TEXELS, key.tz() * TileKey.TEXELS, TileKey.TEXELS, TileKey.TEXELS);
+				if (store != null) {
+					store.saveTile(key, ids);
+				}
 			}
+			byte[] shade = knownShade;
+			boolean drawRelief = relief && world.hasRelief(key.scale());
+			if (drawRelief && shade == null) {
+				shade = loadOrComputeShade(key);
+			}
+			byte[] applied = drawRelief ? shade : null; // null: draw the plain biome colors
 			NativeImage image = new NativeImage(TileKey.TEXELS, TileKey.TEXELS, false);
 			for (int tz = 0; tz < TileKey.TEXELS; tz++) {
 				for (int tx = 0; tx < TileKey.TEXELS; tx++) {
-					image.setPixel(tx, tz, colors.applyAsInt(ids[tz * TileKey.TEXELS + tx]));
+					int i = tz * TileKey.TEXELS + tx;
+					int color = colors.applyAsInt(ids[i]);
+					image.setPixel(tx, tz, applied != null ? Relief.apply(color, applied[i]) : color);
 				}
 			}
-			finished.add(new Finished(key, ids, image, version));
+			finished.add(new Finished(key, ids, shade, image, version));
 			if (closed) {
 				releaseFinished(); // closed while this tile was being made: nobody will upload it
 			}
 		} catch (RuntimeException e) {
 			KiroxMap.LOGGER.warn("Failed to generate map tile {}", key, e);
 			pending.remove(key);
+		}
+	}
+
+	/** Relief shade of a tile from the disk cache or computed from heights; null if that fails (the tile is then drawn flat). */
+	private byte[] loadOrComputeShade(TileKey key) {
+		try {
+			byte[] shade = store != null ? store.loadShade(key) : null;
+			if (shade == null) {
+				int texels = TileKey.TEXELS;
+				// One extra texel on every side, so tile edges are shaded exactly like their neighbours'.
+				float[] heights = world.heights(key.scale(), key.tx() * texels - 1, key.tz() * texels - 1, texels + 2, texels + 2);
+				if (heights == null) {
+					return null;
+				}
+				shade = Relief.shade(heights, texels, key.scale());
+				if (store != null) {
+					store.saveShade(key, shade);
+				}
+			}
+			return shade;
+		} catch (RuntimeException e) {
+			KiroxMap.LOGGER.warn("Failed to compute terrain relief for map tile {}", key, e);
+			return null;
 		}
 	}
 
@@ -242,6 +301,7 @@ public final class TileCache implements AutoCloseable {
 			}
 			tile.texture = new DynamicTexture(() -> "kirox-map tile " + done.key, done.image);
 			tile.ids = done.ids;
+			tile.shade = done.shade;
 			tile.paletteVersion = done.paletteVersion;
 			tile.lastUsed = frame;
 		}
@@ -297,6 +357,7 @@ public final class TileCache implements AutoCloseable {
 	private static final class Tile {
 		final TileKey key;
 		volatile int[] ids;
+		volatile byte[] shade;
 		DynamicTexture texture;
 		int paletteVersion = -1;
 		long lastUsed;
@@ -306,14 +367,14 @@ public final class TileCache implements AutoCloseable {
 		}
 	}
 
-	private record Finished(TileKey key, int[] ids, NativeImage image, int paletteVersion) {
+	private record Finished(TileKey key, int[] ids, byte[] shade, NativeImage image, int paletteVersion) {
 	}
 
 	/** Queue entries are ordered by priority: lowest first (coarse tiles, then nearest the view center). */
-	private record Job(TileCache owner, TileKey key, int[] ids, double priority) implements Runnable, Comparable<Job> {
+	private record Job(TileCache owner, TileKey key, int[] ids, byte[] shade, double priority) implements Runnable, Comparable<Job> {
 		@Override
 		public void run() {
-			owner.generate(key, ids);
+			owner.generate(key, ids, shade);
 		}
 
 		@Override
