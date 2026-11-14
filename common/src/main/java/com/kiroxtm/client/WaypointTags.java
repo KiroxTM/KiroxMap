@@ -14,6 +14,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.world.phys.Vec3;
 
 /**
@@ -81,18 +82,18 @@ public final class WaypointTags {
 		int screenH = graphics.guiHeight();
 		Font font = minecraft.font;
 
-		// Camera basis from the view angles (yaw 0 looks along +Z, positive pitch looks down).
-		// The same interpolated position and angles the game camera uses this frame, so a tag stays put in
-		// the world while the view turns (the raw getYRot/getXRot differ from the camera by up to one tick).
-		Vec3 eye = player.getEyePosition(partialTick);
+		// Projection by the game's own camera (GameRenderer#projectPointToScreen, the one the vanilla locator bar
+		// uses): real FOV (sprint / speed / flying / spyglass / FOV-effects setting), real camera position and
+		// rotation. A hand-made projection from options.fov() drifts as soon as the FOV changes, and the error
+		// grows with the distance from the screen centre.
+		Vec3 eye = player.getEyePosition(partialTick); // only used for the distance text / hide distance
+		GameRenderer renderer = minecraft.gameRenderer;
+		// Forward vector, used ONLY to tell what is behind the camera: a point behind it projects mirrored
+		// (x and y flipped), so it must be dropped before projecting.
 		double yaw = Math.toRadians(player.getViewYRot(partialTick));
 		double pitch = Math.toRadians(player.getViewXRot(partialTick));
 		double cosPitch = Math.cos(pitch);
-		double fx = -Math.sin(yaw) * cosPitch, fy = -Math.sin(pitch), fz = Math.cos(yaw) * cosPitch; // forward
-		double rx = -Math.cos(yaw), rz = -Math.sin(yaw); // right (no vertical part)
-		double ux = -rz * fy, uy = rz * fx - rx * fz, uz = rx * fy; // up = right x forward
-		double tanHalfFov = Math.tan(Math.toRadians(minecraft.options.fov().get()) / 2.0);
-		double aspect = (double) screenW / screenH;
+		double fx = -Math.sin(yaw) * cosPitch, fy = -Math.sin(pitch), fz = Math.cos(yaw) * cosPitch;
 
 		String dimension = AtlasScreen.dimOf(player).key();
 		List<Tag> tags = new ArrayList<>();
@@ -105,14 +106,15 @@ public final class WaypointTags {
 			if (distance <= HIDE_DISTANCE) {
 				continue; // close enough to see the place itself
 			}
-			double depth = dx * fx + dy * fy + dz * fz;
-			if (depth <= 0.05) {
+			if (dx * fx + dy * fy + dz * fz <= 0.05) {
 				continue; // behind the player
 			}
-			double right = dx * rx + dz * rz;
-			double up = dx * ux + dy * uy + dz * uz;
-			float sx = (float) (screenW / 2.0 + right / (depth * tanHalfFov * aspect) * screenW / 2.0);
-			float sy = (float) (screenH / 2.0 - up / (depth * tanHalfFov) * screenH / 2.0);
+			Vec3 ndc = renderer.projectPointToScreen(new Vec3(w.x + 0.5, w.y + TAG_HEIGHT, w.z + 0.5));
+			if (!Double.isFinite(ndc.x) || !Double.isFinite(ndc.y)) {
+				continue; // behind the camera
+			}
+			float sx = (float) ((ndc.x * 0.5 + 0.5) * screenW);
+			float sy = (float) ((0.5 - ndc.y * 0.5) * screenH);
 			String name = shortName(w.name);
 			String distanceText = formatDistance(distance);
 			int nameWidth = font.width(name) + PAD_X * 2;
