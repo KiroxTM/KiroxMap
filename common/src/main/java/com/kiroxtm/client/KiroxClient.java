@@ -3,6 +3,7 @@ package com.kiroxtm.client;
 import java.nio.file.Path;
 
 import com.kiroxtm.config.AtlasConfig;
+import com.kiroxtm.config.ServerProfiles;
 import com.kiroxtm.config.WorldWaypoints;
 import com.kiroxtm.screen.AtlasScreen;
 
@@ -17,6 +18,7 @@ public final class KiroxClient {
 	public static void tick(Minecraft client) {
 		if (client.player != null) {
 			WorldWaypoints.sync(client, AtlasConfig.get()); // loads this world's waypoint file the first time
+			ServerProfiles.sync(client, AtlasConfig.get()); // multiplayer: loads this server's profile on joining
 		}
 		while (KiroxKeys.OPEN_MAP.consumeClick()) {
 			if (client.gui.screen() == null && client.player != null) {

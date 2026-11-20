@@ -8,6 +8,7 @@ import com.mojang.blaze3d.platform.InputConstants;
 
 import com.kiroxtm.client.KiroxKeys;
 import com.kiroxtm.config.AtlasConfig;
+import com.kiroxtm.config.ServerProfiles;
 import com.kiroxtm.config.WorldWaypoints;
 import com.kiroxtm.config.Waypoint;
 import com.kiroxtm.map.MapView;
@@ -18,7 +19,6 @@ import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.KeyEvent;
-import net.minecraft.client.multiplayer.ServerData;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.server.IntegratedServer;
 import net.minecraft.network.chat.Component;
@@ -73,6 +73,7 @@ public final class AtlasScreen extends Screen {
 	@Override
 	protected void init() {
 		WorldWaypoints.sync(minecraft, config);
+		ServerProfiles.sync(minecraft, config); // multiplayer: restore this server's seed and waypoints
 		if (!opened) {
 			opened = true;
 			openWorld(); // cheap: no native code involved
@@ -331,7 +332,9 @@ public final class AtlasScreen extends Screen {
 		String trimmed = text.trim();
 		session.seedText = text;
 		OptionalLong seed = trimmed.isEmpty() ? OptionalLong.empty() : WorldOptions.parseSeed(trimmed);
-		if (!trimmed.isEmpty()) {
+		if (trimmed.isEmpty()) {
+			config.seeds.remove(worldKey); // clearing the box forgets the seed of this world
+		} else {
 			config.seeds.put(worldKey, text);
 		}
 		if (worldShown) { // before that, tick() applies session.seedText when the warm-up is done
@@ -458,8 +461,7 @@ public final class AtlasScreen extends Screen {
 		if (server != null) {
 			return "sp:" + server.getWorldPath(LevelResource.ROOT).toAbsolutePath().normalize().getFileName();
 		}
-		ServerData data = minecraft.getCurrentServer();
-		return data != null ? "mp:" + data.ip : "none";
+		return ServerProfiles.keyOf(minecraft); // stable per server: see ServerKey
 	}
 
 	private OptionalLong singleplayerSeed() {

@@ -20,11 +20,16 @@ import com.google.gson.JsonParseException;
 import com.kiroxtm.world.StructureKind;
 import com.kiroxtm.platform.Services;
 
+import net.minecraft.client.Minecraft;
+import net.minecraft.network.chat.Component;
+
 /** Persistent client settings, stored as {@code config/kirox-map.json}. */
 public final class AtlasConfig {
 	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 	private static final Path FILE = Services.PLATFORM.getConfigDir().resolve("kirox-map.json");
 	private static AtlasConfig instance;
+	/** True after the failure message was shown, so it is not repeated on every save. */
+	private static boolean saveFailureShown;
 
 	public boolean showGrid = true;
 	public boolean showSlimeChunks = false;
@@ -100,6 +105,7 @@ public final class AtlasConfig {
 				}
 			} catch (IOException | JsonParseException e) {
 				KiroxMap.LOGGER.warn("Could not read {}, using defaults", FILE, e);
+				keepCopyOfUnreadable();
 			}
 		}
 		return new AtlasConfig();
@@ -116,19 +122,56 @@ public final class AtlasConfig {
 		return this;
 	}
 
+	/** The defaults we fall back to will overwrite this file on the next save, so keep what was in it. */
+	private static void keepCopyOfUnreadable() {
+		try {
+			Files.copy(FILE, FILE.resolveSibling(FILE.getFileName() + ".bad-" + System.currentTimeMillis()));
+		} catch (IOException e) {
+			KiroxMap.LOGGER.warn("Could not keep a copy of {}", FILE, e);
+		}
+	}
+
 	public void save() {
+		String json = GSON.toJson(this);
 		try {
 			Files.createDirectories(FILE.getParent());
 			Path tmp = FILE.resolveSibling(FILE.getFileName() + ".tmp");
-			Files.writeString(tmp, GSON.toJson(this), StandardCharsets.UTF_8);
+			Files.writeString(tmp, json, StandardCharsets.UTF_8);
 			Files.move(tmp, FILE, StandardCopyOption.REPLACE_EXISTING);
+			saveFailureShown = false;
 		} catch (IOException e) {
-			KiroxMap.LOGGER.warn("Could not save {}", FILE, e);
+			KiroxMap.LOGGER.warn("Could not save {} (the rename failed), writing it in place", FILE, e);
+			try { // a locked file (antivirus, cloud sync) can refuse the rename but still accept a write
+				Files.writeString(FILE, json, StandardCharsets.UTF_8);
+				saveFailureShown = false;
+			} catch (IOException second) {
+				KiroxMap.LOGGER.warn("Could not save {}", FILE, second);
+				tellSaveFailed();
+			}
 		}
 		try {
 			WorldWaypoints.saveCurrent(this); // singleplayer: also keep the waypoints in the world's save folder
 		} catch (RuntimeException e) {
 			KiroxMap.LOGGER.warn("Could not save the world waypoints", e);
+		}
+		try {
+			ServerProfiles.saveCurrent(this); // multiplayer: also keep the seed and waypoints in the server's profile
+		} catch (RuntimeException e) {
+			KiroxMap.LOGGER.warn("Could not save the server profile", e);
+		}
+	}
+
+	/** Saving used to fail silently; say it once in the chat so the player knows the data is not being kept. */
+	private static void tellSaveFailed() {
+		if (saveFailureShown) {
+			return;
+		}
+		saveFailureShown = true;
+		Minecraft minecraft = Minecraft.getInstance();
+		if (minecraft.player != null) {
+			minecraft.player.sendSystemMessage(Component.literal(
+					"[Kirox Map] Could not save kirox-map.json, your waypoints and seeds may not be kept. "
+							+ "Check that the config folder is writable and not locked (antivirus / cloud sync); details are in the game log."));
 		}
 	}
 }
